@@ -1,0 +1,63 @@
+<RCC>
+    <qresource prefix="/custom/img">
+        <file alias="altitude.svg">res/Images/altitude.svg</file>
+        <file alias="attitude_crosshair.svg">res/Images/attitude_crosshair.svg</file>
+        <file alias="attitude_dial.svg">res/Images/attitude_dial.svg</file>
+        <file alias="attitude_pointer.svg">res/Images/attitude_pointer.svg</file>
+        <file alias="chronometer.svg">res/Images/chronometer.svg</file>
+        <file alias="compass_needle.svg">res/Images/compass_needle.svg</file>
+        <file alias="compass_pointer.svg">res/Images/compass_pointer.svg</file>
+        <file alias="distance.svg">res/Images/distance.svg</file>
+        <file alias="horizontal_speed.svg">res/Images/horizontal_speed.svg</file>
+        <file alias="microSD.svg">res/Images/microSD.svg</file>
+        <file alias="odometer.svg">res/Images/odometer.svg</file>
+        <file alias="vertical_speed.svg">res/Images/vertical_speed.svg</file>
+        <file alias="dronecode-black.svg">res/Images/dronecode-black.svg</file>
+        <file alias="dronecode-white.svg">res/Images/dronecode-white.svg</file>
+        <file alias="wind_arrow.svg">res/Images/wind_arrow.svg</file>
+        <file alias="sadron-logo-white.svg">res/Images/sadron-logo-white.svg</file>
+        <file alias="sadron-logo-dark.svg">res/Images/sadron-logo-dark.svg</file>
+    </qresource>
+    <qresource prefix="/res">
+        <file alias="target.svg">res/Images/target.svg</file>
+        <file alias="search.svg">res/Images/search.svg</file>
+        <file alias="alert.svg">res/Images/alert.svg</file>
+    </qresource>
+    <qresource prefix="/Custom/qmlimages">
+        <file alias="PaperPlane.svg">res/Images/CustomVehicleIcon.svg</file>
+    </qresource>
+    <qresource prefix="/Custom/qml">
+        <file alias="QGroundControl/Toolbar/SelectViewDropdown.qml">src/UI/toolbar/SelectViewDropdown.qml</file>
+        <file alias="QGroundControl/FlyView/FlyViewCustomLayer.qml">src/FlyViewCustomLayer.qml</file>
+        <file alias="QGroundControl/FlyView/FlyViewToolStripActionList.qml">src/FlyViewToolStripActionList.qml</file>
+        <file alias="QGroundControl/FlyView/CustomGuidedActionsController.qml">src/CustomGuidedActionsController.qml</file>
+    </qresource>
+    <qresource prefix="/custom/Sadron">
+        <file alias="SARToolView.qml">res/Sadron/SARToolView.qml</file>
+        <file alias="SARPanel.qml">res/Sadron/SARPanel.qml</file>
+        <file alias="SARZoneMapVisuals.qml">res/Sadron/SARZoneMapVisuals.qml</file>
+        <file alias="SARTargetMapVisuals.qml">res/Sadron/SARTargetMapVisuals.qml</file>
+        <file alias="SARTargetMarker.qml">res/Sadron/SARTargetMarker.qml</file>
+        <file alias="SARToast.qml">res/Sadron/SARToast.qml</file>
+        <file alias="SARTransectMapVisuals.qml">res/Sadron/SARTransectMapVisuals.qml</file>
+        <file alias="SARZoneEditor.qml">res/Sadron/SARZoneEditor.qml</file>
+        <file alias="SARMapInteractionLayer.qml">res/Sadron/SARMapInteractionLayer.qml</file>
+        <file alias="SARCoverageOverlay.qml">res/Sadron/SARCoverageOverlay.qml</file>
+        <file alias="MeshStatusPanel.qml">res/Sadron/MeshStatusPanel.qml</file>
+        <file alias="MeshStatusIndicator.qml">res/Sadron/MeshStatusIndicator.qml</file>
+        <file alias="SARStatusIndicator.qml">res/Sadron/SARStatusIndicator.qml</file>
+        <file alias="SARVideoPanel.qml">res/Sadron/SARVideoPanel.qml</file>
+        <file alias="SARDroneVideoTile.qml">res/Sadron/SARDroneVideoTile.qml</file>
+        <file alias="SARWeatherOverlay.qml">res/Sadron/SARWeatherOverlay.qml</file>
+        <file alias="SARTerrainSlopeOverlay.qml">res/Sadron/SARTerrainSlopeOverlay.qml</file>
+        <file alias="SARHydroOverlay.qml">res/Sadron/SARHydroOverlay.qml</file>
+        <file alias="SARReTaskingPopup.qml">res/Sadron/SARReTaskingPopup.qml</file>
+        <file alias="CoordinationStatusPanel.qml">res/Sadron/CoordinationStatusPanel.qml</file>
+        <file alias="ProximityAlertOverlay.qml">res/Sadron/ProximityAlertOverlay.qml</file>
+        <file alias="SARSearchTrailVisuals.qml">res/Sadron/SARSearchTrailVisuals.qml</file>
+    </qresource>
+    <qresource prefix="/Custom/res">
+        <file alias="QGCLogoFull.svg">res/Images/QGCLogoFull.svg</file>
+        <file alias="qgroundcontrol.ico">res/icons/custom_qgroundcontrol.ico</file>
+    </qresource>
+</RCC>

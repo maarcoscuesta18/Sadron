@@ -43,3 +43,6 @@ set(QGC_DISABLE_APM_PLUGIN_FACTORY ON CACHE BOOL "Disable APM Plugin Factory" FO
 
 # Implement custom PX4 plugin factory
 set(QGC_DISABLE_PX4_PLUGIN_FACTORY ON CACHE BOOL "Disable PX4 Plugin Factory" FORCE)
+
+# Disable unit tests for custom build (APM tests fail when APM is disabled)
+set(QGC_BUILD_TESTING OFF CACHE BOOL "Disable unit tests" FORCE)

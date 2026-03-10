@@ -30,6 +30,30 @@ RowLayout {
         _planMasterController.upload()
     }
 
+    function _sendToSARClicked() {
+        if (!sarZoneManager) return
+
+        if (sarZoneManager.hasSearchArea) {
+            QGroundControl.showMessageDialog(root, qsTr("Send to SAR"),
+                                         qsTr("This will replace the current SAR search area and clear existing zones. Continue?"),
+                                         Dialog.Yes | Dialog.Cancel,
+                                         function() { _doSendToSAR() })
+        } else {
+            _doSendToSAR()
+        }
+    }
+
+    function _doSendToSAR() {
+        var result = sarZoneManager.importFromPlanItems(_visualItems)
+        if (result && result.length > 0) {
+            QGroundControl.showMessageDialog(root, qsTr("Send to SAR"), result, Dialog.Ok)
+        } else {
+            QGroundControl.showMessageDialog(root, qsTr("Send to SAR"),
+                                         qsTr("No usable polygons or waypoints found in the current plan."),
+                                         Dialog.Ok)
+        }
+    }
+
     function _downloadClicked() {
         if (_planMasterController.dirty) {
             QGroundControl.showMessageDialog(root, qsTr("Download"),
@@ -119,6 +143,13 @@ RowLayout {
         visible: !_syncInProgress
         primary: _controllerDirty
         onClicked: _uploadClicked()
+    }
+
+    QGCButton {
+        text:       qsTr("Send to SAR")
+        iconSource: "/res/search.svg"
+        enabled:    !_syncInProgress && _hasPlanItems && sarZoneManager
+        onClicked:  _sendToSARClicked()
     }
 
     QGCButton {

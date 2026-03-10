@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 48" width="200" height="48">
+  <!-- Sadron SAR logo — white variant (for dark backgrounds) -->
+  <!-- Compass/search icon -->
+  <circle cx="24" cy="24" r="18" fill="none" stroke="#ffffff" stroke-width="2.5"/>
+  <circle cx="24" cy="24" r="3" fill="#e67e22"/>
+  <line x1="24" y1="6" x2="24" y2="14" stroke="#e67e22" stroke-width="2.5" stroke-linecap="round"/>
+  <line x1="24" y1="34" x2="24" y2="42" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="6" y1="24" x2="14" y2="24" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="34" y1="24" x2="42" y2="24" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round"/>
+  <!-- Search magnifier handle -->
+  <line x1="37" y1="37" x2="44" y2="44" stroke="#e67e22" stroke-width="3" stroke-linecap="round"/>
+  <!-- Text -->
+  <text x="54" y="22" font-family="Arial,Helvetica,sans-serif" font-size="18" font-weight="bold" fill="#ffffff" letter-spacing="2">SADRON</text>
+  <text x="54" y="38" font-family="Arial,Helvetica,sans-serif" font-size="10" fill="#e67e22" letter-spacing="3">SAR SYSTEM</text>
+</svg>
