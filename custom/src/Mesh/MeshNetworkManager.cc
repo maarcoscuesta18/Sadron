@@ -292,6 +292,14 @@ MeshNode *MeshNetworkManager::_getOrCreateNode(int vehicleId)
 
 void MeshNetworkManager::_updateTopology()
 {
+    // Block signals on all nodes during the reset+recalc to avoid
+    // redundant per-property emissions; a single topologyChanged()
+    // at the end is sufficient for QML.
+    for (int i = 0; i < _nodes->count(); i++) {
+        auto *node = qobject_cast<MeshNode *>(_nodes->get(i));
+        if (node) node->blockSignals(true);
+    }
+
     // Reset signal strength so it can recover when nodes move closer
     for (int i = 0; i < _nodes->count(); i++) {
         auto *node = qobject_cast<MeshNode *>(_nodes->get(i));
@@ -321,6 +329,12 @@ void MeshNetworkManager::_updateTopology()
                 nodeB->removeConnectedNode(nodeA->vehicleId());
             }
         }
+    }
+
+    // Unblock signals on all nodes
+    for (int i = 0; i < _nodes->count(); i++) {
+        auto *node = qobject_cast<MeshNode *>(_nodes->get(i));
+        if (node) node->blockSignals(false);
     }
 
     emit topologyChanged();

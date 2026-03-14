@@ -134,6 +134,10 @@ VehicleCoordinator::VehicleCoordinator(SARMissionManager   *missionMgr,
 
 VehicleCoordinator::~VehicleCoordinator()
 {
+    // Stop the tick timer to prevent callbacks after managers may be destroyed
+    if (_tickTimer) {
+        _tickTimer->stop();
+    }
 }
 
 // ============================================================================
@@ -341,6 +345,10 @@ void VehicleCoordinator::_checkZoneOverlaps()
 
             if (_polygonsOverlap(polyA, polyB)) {
                 double overlapPct = _estimateOverlapPercent(polyA, polyB);
+
+                // Skip near-zero overlap (zones sharing edges/vertices but not actually overlapping)
+                if (overlapPct < 1.0) continue;
+
                 auto *overlap = new ZoneOverlap(zoneA->zoneId(), zoneB->zoneId(), overlapPct, this);
                 _overlaps->append(overlap);
 
@@ -493,6 +501,11 @@ void VehicleCoordinator::_checkBoundaryViolations()
         if (zone->status() != SARZone::Active) continue;
 
         int vehicleId = zone->assignedVehicle();
+
+        // Skip boundary check for vehicles that aren't flying yet (e.g. during takeoff)
+        Vehicle *vehicle = MultiVehicleManager::instance()->getVehicleById(vehicleId);
+        if (vehicle && !vehicle->flying()) continue;
+
         MeshNode *node = _meshMgr->getNode(vehicleId);
         if (!node || !node->position().isValid()) continue;
 
@@ -580,7 +593,7 @@ void VehicleCoordinator::_checkProximityConflicts()
                 } else {
                     // WARNING: horizontal proximity but vertically separated
                     severity = ProximityConflict::Warning;
-                    resolution = QStringLiteral("Vertically separated (%.1fm)").arg(vDist);
+                    resolution = QStringLiteral("Vertically separated (%1m)").arg(vDist, 0, 'f', 1);
 
                     // Clear altitude adjustment if separation is now adequate
                     _altitudeAdjustments.remove(qMax(idA, idB));
@@ -647,17 +660,22 @@ void VehicleCoordinator::_commandAltitudeAdjust(int vehicleId, double deltaAltM)
         return;
     }
 
-    // Get current altitude and compute new target
+    // Don't send altitude commands to vehicles executing a mission — PX4 ignores
+    // MAV_CMD_DO_REPOSITION in mission mode and it spams "Ignore command 192" logs
+    if (!vehicle->flying() || vehicle->flightMode() == vehicle->missionFlightMode()) {
+        qCDebug(VehicleCoordinatorLog) << "Skipping altitude adjust for V" << vehicleId
+            << "— vehicle in mission mode";
+        return;
+    }
+
     double currentAlt = vehicle->altitudeRelative()->rawValue().toDouble();
     double newAlt = currentAlt + deltaAltM;
 
     qCInfo(VehicleCoordinatorLog) << "Altitude separation: commanding V" << vehicleId
         << "from" << currentAlt << "m to" << newAlt << "m (+" << deltaAltM << "m)";
 
-    // Use guided mode altitude change — this sends MAV_CMD_DO_REPOSITION or
-    // equivalent depending on firmware, which adjusts altitude without interrupting
-    // horizontal flight path
-    vehicle->guidedModeChangeAltitude(newAlt, false /* pauseVehicle */);
+    // guidedModeChangeAltitude takes a delta (altitude change), not absolute altitude
+    vehicle->guidedModeChangeAltitude(deltaAltM, false /* pauseVehicle */);
 
     emit altitudeAdjusted(vehicleId, newAlt);
 }

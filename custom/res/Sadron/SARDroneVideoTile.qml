@@ -23,11 +23,11 @@ Rectangle {
     property real _smallFont:   compact ? ScreenTools.smallFontPointSize * 0.9 : ScreenTools.smallFontPointSize
     property real _tinyFont:    compact ? ScreenTools.smallFontPointSize * 0.8 : ScreenTools.smallFontPointSize * 0.9
 
-    // Telemetry values
-    property real _heading:     vehicle ? vehicle.heading.rawValue       : 0
-    property real _groundSpeed: vehicle ? vehicle.groundSpeed.rawValue   : 0
-    property real _climbRate:   vehicle ? vehicle.climbRate.rawValue     : 0
-    property real _altitude:    vehicle ? vehicle.altitudeRelative.rawValue : 0
+    // Telemetry values (guard nested Fact access — property may be null during init)
+    property real _heading:     vehicle && vehicle.heading          ? vehicle.heading.rawValue          : 0
+    property real _groundSpeed: vehicle && vehicle.groundSpeed      ? vehicle.groundSpeed.rawValue      : 0
+    property real _climbRate:   vehicle && vehicle.climbRate        ? vehicle.climbRate.rawValue        : 0
+    property real _altitude:    vehicle && vehicle.altitudeRelative ? vehicle.altitudeRelative.rawValue : 0
     property string _flightMode: vehicle ? vehicle.flightMode           : ""
     property bool _armed:       vehicle ? vehicle.armed                 : false
     property bool _flying:      vehicle ? vehicle.flying                : false
@@ -418,7 +418,7 @@ Rectangle {
 
                 // Distance to home
                 QGCLabel {
-                    property real dist: _root.vehicle ? _root.vehicle.distanceToHome.rawValue : 0
+                    property real dist: _root.vehicle && _root.vehicle.distanceToHome ? _root.vehicle.distanceToHome.rawValue : 0
                     text:   "HOME " + (isNaN(dist) ? "0" : dist.toFixed(0)) + " m"
                     color:  Qt.rgba(1, 1, 1, 0.6)
                     font.pointSize: _tinyFont

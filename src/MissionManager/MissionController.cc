@@ -1946,8 +1946,12 @@ void MissionController::_initVisualItem(VisualMissionItem* visualItem)
 
 void MissionController::_deinitVisualItem(VisualMissionItem* visualItem)
 {
-    // Disconnect all signals
+    // Disconnect all signals where visualItem is the SENDER
     disconnect(visualItem, nullptr, nullptr, nullptr);
+    // Disconnect all signals where visualItem is the RECEIVER
+    // This prevents use-after-free when items connected to each other are
+    // deleted in list order (e.g. MissionSettingsItem destroyed before TakeoffMissionItem)
+    disconnect(nullptr, nullptr, visualItem, nullptr);
 }
 
 void MissionController::_itemCommandChanged(void)

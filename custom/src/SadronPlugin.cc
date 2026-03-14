@@ -87,6 +87,16 @@ QGCCorePlugin *SadronPlugin::instance()
 
 void SadronPlugin::init()
 {
+    // Guard against double-init — subsystems must not already exist
+    Q_ASSERT(!_sarZoneManager);
+    Q_ASSERT(!_sarTargetManager);
+    Q_ASSERT(!_sarCoverageTracker);
+    Q_ASSERT(!_sarMissionManager);
+    Q_ASSERT(!_sarReTaskingManager);
+    Q_ASSERT(!_meshNetworkManager);
+    Q_ASSERT(!_environmentalDataProvider);
+    Q_ASSERT(!_vehicleCoordinator);
+
     qCDebug(SadronLog) << "Initializing SAR subsystems";
 
     _sarZoneManager = new SARZoneManager(this);
@@ -169,7 +179,7 @@ void SadronPlugin::_updateZoneProgress()
         zone->setProgress(pct / 100.0);
     }
 
-    emit _sarZoneManager->progressChanged();
+    _sarZoneManager->notifyProgressChanged();
 }
 
 void SadronPlugin::_addSettingsEntry(const QString &title, const char *qmlFile, const char *iconFile)
@@ -360,6 +370,9 @@ void SadronPlugin::paletteOverride(const QString &colorName, QGCPalette::Palette
 QQmlApplicationEngine *SadronPlugin::createQmlApplicationEngine(QObject *parent)
 {
     _qmlEngine = QGCCorePlugin::createQmlApplicationEngine(parent);
+    if (!_qmlEngine) {
+        return nullptr;
+    }
     _qmlEngine->addImportPath("qrc:/qml/Custom/Widgets");
 
     // Register SAR subsystems with QML

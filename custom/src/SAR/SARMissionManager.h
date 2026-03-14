@@ -166,7 +166,7 @@ private:
     QVariantList _generateParallelTrack(const QVariantList &polygon, double spacing, double altitude) const;
     QVariantList _generateCreepingLine(const QVariantList &polygon, double spacing, double altitude) const;
     QVariantList _generateExpandingSquare(const QGeoCoordinate &center, double sideLength, double spacing, double altitude) const;
-    QVariantList _generateSectorSearch(const QGeoCoordinate &datum, double radius, double altitude) const;
+    QVariantList _generateSectorSearch(const QVariantList &polygon, double altitude) const;
 
     void _onSearchParamsChanged();
     void _onVehicleAdded(Vehicle *vehicle);
@@ -177,6 +177,12 @@ private:
     void _uploadMissionToVehicle(Vehicle *vehicle, SARZone *zone);
     void _onUploadComplete(bool error);
     void _startAllUploadedVehicles();
+    void _configureRCLossExemption(Vehicle *v);
+
+    // Mission completion monitoring
+    void _onVehicleFlightModeChanged(const QString &flightMode);
+    void _disconnectMissionCompleteSignals();
+    void _checkAllMissionsComplete();
 
     // Abort state machine
     void _abortPhase_landVehicles();
@@ -187,6 +193,14 @@ private:
     void _onVehicleLandedForAbort();
     void _onVehicleDisarmedForAbort();
     void _abortSafetyTimeout();
+
+    // Recovery (normal completion) land & disarm sequence
+    void _recoveryPhase_landVehicles();
+    void _recoveryPhase_disarmVehicles();
+    void _onVehicleLandedForRecovery();
+    void _onVehicleDisarmedForRecovery();
+    void _recoveryComplete();
+    void _recoverySafetyTimeout();
 
     SARZoneManager      *_zoneManager = nullptr;
     SARCoverageTracker  *_coverageTracker = nullptr;
@@ -211,4 +225,11 @@ private:
     AbortPhase          _abortPhase = AbortIdle;
     QSet<int>           _abortPendingVehicles;
     QTimer             *_abortSafetyTimer = nullptr;
+
+    // Recovery (normal completion) land & disarm tracking
+    QSet<int>           _recoveryPendingVehicles;
+    QTimer             *_recoverySafetyTimer = nullptr;
+
+    // Mission-completion tracking: vehicleIds whose mission is still in progress
+    QSet<int>           _missionInProgressVehicles;
 };

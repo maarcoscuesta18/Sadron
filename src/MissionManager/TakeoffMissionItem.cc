@@ -39,19 +39,21 @@ void TakeoffMissionItem::_init(bool forLoad)
 {
     _editorQml = QStringLiteral("qrc:/qml/QGroundControl/Controls/SimpleItemEditor.qml");
 
-    connect(_settingsItem, &MissionSettingsItem::coordinateChanged, this, &TakeoffMissionItem::launchCoordinateChanged);
+    if (_settingsItem) {
+        connect(_settingsItem, &MissionSettingsItem::coordinateChanged, this, &TakeoffMissionItem::launchCoordinateChanged);
+    }
 
     if (_flyView) {
         _initLaunchTakeoffAtSameLocation();
         return;
     }
 
-    QGeoCoordinate homePosition = _settingsItem->coordinate();
+    QGeoCoordinate homePosition = _settingsItem ? _settingsItem->coordinate() : QGeoCoordinate();
     if (!homePosition.isValid()) {
         Vehicle* activeVehicle = MultiVehicleManager::instance()->activeVehicle();
         if (activeVehicle) {
             homePosition = activeVehicle->homePosition();
-            if (homePosition.isValid()) {
+            if (homePosition.isValid() && _settingsItem) {
                 _settingsItem->setCoordinate(homePosition);
             }
         }
@@ -91,14 +93,14 @@ void TakeoffMissionItem::_setLaunchTakeoffAtSameLocation(bool launchTakeoffAtSam
 
 QGeoCoordinate TakeoffMissionItem::launchCoordinate(void) const
 {
-    return _settingsItem->coordinate();
+    return _settingsItem ? _settingsItem->coordinate() : QGeoCoordinate();
 }
 
 void TakeoffMissionItem::setCoordinate(const QGeoCoordinate& coordinate)
 {
     if (coordinate != this->coordinate()) {
         SimpleMissionItem::setCoordinate(coordinate);
-        if (_launchTakeoffAtSameLocation) {
+        if (_launchTakeoffAtSameLocation && _settingsItem) {
             _settingsItem->setCoordinate(coordinate);
         }
     }
@@ -118,7 +120,7 @@ void TakeoffMissionItem::_initLaunchTakeoffAtSameLocation(void)
             // PX4 specifies a coordinate for takeoff even for multi-rotor. But it makes more sense to not have a coordinate
             // from and end user standpoint. So even for PX4 we try to keep launch and takeoff at the same position. Unless the
             // user has moved/loaded launch at a different location than takeoff.
-            if (coordinate().isValid() && _settingsItem->coordinate().isValid()) {
+            if (coordinate().isValid() && _settingsItem && _settingsItem->coordinate().isValid()) {
                 _setLaunchTakeoffAtSameLocation(coordinate().latitude() == _settingsItem->coordinate().latitude() && coordinate().longitude() == _settingsItem->coordinate().longitude());
             } else {
                 _setLaunchTakeoffAtSameLocation(true);
@@ -153,6 +155,10 @@ bool TakeoffMissionItem::load(const QJsonObject& json, int sequenceNumber, QStri
 void TakeoffMissionItem::_setLaunchCoordinate(const QGeoCoordinate& launchCoordinate)
 {
     if (!launchCoordinate.isValid()) {
+        return;
+    }
+
+    if (!_settingsItem) {
         return;
     }
 

@@ -4,6 +4,8 @@
 #include <QtCore/QLoggingCategory>
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonObject>
+#include <QtCore/QList>
+#include <QtCore/QPair>
 #include <QtPositioning/QGeoCoordinate>
 #include <QtPositioning/QGeoRectangle>
 #include <QtQmlIntegration/QtQmlIntegration>
@@ -137,10 +139,11 @@ class SARZoneManager : public QObject
     Q_PROPERTY(bool hasSearchArea                   READ hasSearchArea      NOTIFY searchAreaChanged)
     Q_PROPERTY(SARZone* selectedZone                READ selectedZone       NOTIFY selectedZoneChanged)
     Q_PROPERTY(int zoneAssignmentGeneration         READ zoneAssignmentGeneration NOTIFY zoneAssignmentChanged)
+    Q_PROPERTY(double lastCoverageRatio             READ lastCoverageRatio  NOTIFY coverageValidated)
 
 public:
     enum PartitionStrategy {
-        GridPartition = 0,      // Simple grid subdivision
+        GridPartition = 0,      // Adaptive grid subdivision with oversample + merge
         VoronoiPartition,       // Voronoi-based around drone positions
         StripPartition,         // Parallel strips (good for parallel track)
     };
@@ -156,6 +159,7 @@ public:
     bool hasSearchArea() const;
     SARZone* selectedZone() const { return _selectedZone; }
     int zoneAssignmentGeneration() const { return _zoneAssignmentGen; }
+    double lastCoverageRatio() const { return _lastCoverageRatio; }
 
     // Zone creation and partitioning
     Q_INVOKABLE void partitionArea(const QVariantList &boundaryPolygon, int droneCount, int strategy = GridPartition);
@@ -170,6 +174,10 @@ public:
     /// @return description string summarising what was imported (for UI feedback)
     Q_INVOKABLE QString importFromPlanItems(QmlObjectListModel *visualItems);
 
+    /// Compute the fraction of the search area covered by all zones (0.0 to 1.0).
+    /// Useful for verifying partition completeness.
+    Q_INVOKABLE double coverageRatio() const;
+
     // Zone selection
     Q_INVOKABLE void selectZone(int zoneId);
     Q_INVOKABLE void clearSelection();
@@ -179,6 +187,9 @@ public:
     Q_INVOKABLE void assignZoneToVehicle(int zoneId, int vehicleId);
     Q_INVOKABLE void reassignZone(int zoneId, int newVehicleId);
     Q_INVOKABLE SARZone *zoneForVehicle(int vehicleId) const;
+
+    // Notify helpers (avoids emitting signals from outside the class)
+    void notifyProgressChanged();
 
     // Serialization
     QJsonArray toJson() const;
@@ -192,16 +203,47 @@ signals:
     void searchAreaChanged();
     void selectedZoneChanged();
     void zoneAssignmentChanged();
+    void coverageValidated(double ratio);
+    void partitionWarning(const QString &message);
 
 private:
+    // ── Partition strategies ──
     void _partitionGrid(const QVariantList &boundary, int count);
     void _partitionStrips(const QVariantList &boundary, int count);
+    void _partitionVoronoi(const QVariantList &boundary, int count);
+
+    // ── Geometry helpers ──
     QGeoRectangle _boundingRect(const QVariantList &polygon) const;
     static QList<QGeoCoordinate> _computeConvexHull(const QList<QGeoCoordinate> &points);
+
+    /// Weiler-Atherton polygon clipping — handles both convex AND concave polygons.
+    /// Returns a list of clipped polygon fragments (concave clipping can produce
+    /// multiple disjoint result polygons).
+    static QList<QVariantList> _clipPolygonWA(const QVariantList &subject, const QVariantList &clip);
+
+    /// Legacy single-result clipper (returns the largest fragment or empty).
+    static QVariantList _clipPolygon(const QVariantList &subject, const QVariantList &clip);
+
+    /// Point-in-polygon test (ray-casting algorithm).
+    static bool _pointInPolygon(const QGeoCoordinate &point, const QVariantList &polygon);
+
+    /// Compute signed area of a polygon in degrees² (positive = CCW).
+    static double _signedArea(const QList<QGeoCoordinate> &poly);
+
+    /// Compute the centroid of a polygon.
+    static QGeoCoordinate _centroid(const QVariantList &polygon);
+
+    /// Compute approximate area of a polygon in square metres.
+    static double _approxAreaSqM(const QVariantList &polygon);
+
+    // ── Coverage validation ──
+    void _validateCoverage(const QVariantList &boundary);
+
     int _nextZoneId = 1;
 
     QmlObjectListModel *_zones = nullptr;
     QGCMapPolygon      *_searchAreaPolygon = nullptr;
     SARZone            *_selectedZone = nullptr;
     int                 _zoneAssignmentGen = 0;
+    double              _lastCoverageRatio = 0.0;
 };

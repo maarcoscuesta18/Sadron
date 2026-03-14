@@ -141,7 +141,7 @@ Rectangle {
                             id:                 zonePatternCombo
                             Layout.fillWidth:   true
                             model:              [qsTr("Parallel Track"), qsTr("Creeping Line"), qsTr("Expanding Square"), qsTr("Sector")]
-                            currentIndex:       _root.zone && _root.zone.searchPattern >= 0 ? _root.zone.searchPattern : (sarMissionManager ? sarMissionManager.currentPattern : 0)
+                            currentIndex:       _root.zone && _root.zone.searchPattern >= 0 ? Math.max(0, Math.min(3, _root.zone.searchPattern)) : (sarMissionManager ? sarMissionManager.currentPattern : 0)
                             enabled:            !globalToggle.checked
                             onActivated: {
                                 if (_root.zone) _root.zone.searchPattern = currentIndex

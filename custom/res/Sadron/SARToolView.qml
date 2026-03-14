@@ -13,7 +13,6 @@ Rectangle {
     color: qgcPal.window
 
     property real _margin:          ScreenTools.defaultFontPixelWidth * 0.75
-    property bool _panelVisible:    true
     property bool _videoPanelVisible: true
 
     // Split ratio: 0.0 = all video, 1.0 = all map. Default ~65% map.
@@ -138,15 +137,33 @@ Rectangle {
         anchors.margins:    _margin
         anchors.topMargin:  _margin * 0.5
 
-        // ── Map Section (left side) ──
-        Item {
-            id: mapSection
+        // ── SAR Panel (fixed left sidebar) ──
+        Loader {
+            id: sarPanel
             anchors.top:    parent.top
             anchors.left:   parent.left
             anchors.bottom: parent.bottom
+            source:         "qrc:/custom/Sadron/SARPanel.qml"
+            active:         true
+            onLoaded: {
+                item.mapControl = Qt.binding(function() { return sarMap })
+            }
+        }
+
+        // ── Map Section (center, between sidebar and video) ──
+        Item {
+            id: mapSection
+            anchors.top:    parent.top
+            anchors.left:   sarPanel.right
+            anchors.leftMargin: _margin * 0.5
+            anchors.bottom: parent.bottom
+
+            // Available space = total width minus the fixed sidebar and its margin
+            property real _availableWidth: contentArea.width - sarPanel.width - _margin * 0.5
+
             width:          _videoPanelVisible
-                            ? parent.width * _splitRatio - _dividerWidth / 2
-                            : parent.width
+                            ? _availableWidth * _splitRatio - _dividerWidth / 2
+                            : _availableWidth
 
             Behavior on width {
                 NumberAnimation { duration: 200; easing.type: Easing.InOutQuad }
@@ -162,12 +179,7 @@ Rectangle {
                 center:                     QGroundControl.flightMapPosition
 
                 // Required by QGCMapPolygonVisuals for toolbar positioning and default polygon vertices
-                property rect centerViewport: Qt.rect(
-                    sarPanel.visible && sarPanel.item ? sarPanel.width + _margin : 0,
-                    0,
-                    width - (sarPanel.visible && sarPanel.item ? sarPanel.width + _margin : 0),
-                    height
-                )
+                property rect centerViewport: Qt.rect(0, 0, width, height)
 
                 onZoomLevelChanged: QGroundControl.flightMapZoom = sarMap.zoomLevel
                 onCenterChanged: QGroundControl.flightMapPosition = sarMap.center
@@ -277,69 +289,12 @@ Rectangle {
                 }
             }
 
-            // SAR Panel (left side of map)
-            Loader {
-                id: sarPanel
-                anchors.top:        sarMap.top
-                anchors.left:       sarMap.left
-                anchors.bottom:     sarMap.bottom
-                anchors.margins:    _margin
-                source:             "qrc:/custom/Sadron/SARPanel.qml"
-                active:             true
-                visible:            _panelVisible
-                onLoaded: {
-                    item.mapControl = Qt.binding(function() { return sarMap })
-                    item.closePanel.connect(function() { _panelVisible = false })
-                }
-            }
-
             // SAR Toast (bottom-center of map)
             Loader {
                 id:             sarToastLoader
                 anchors.fill:   sarMap
                 source:         "qrc:/custom/Sadron/SARToast.qml"
                 active:         true
-            }
-
-            // Show SAR Panel toggle button (visible when panel hidden)
-            Rectangle {
-                id:                 panelToggle
-                anchors.top:        sarMap.top
-                anchors.left:       sarMap.left
-                anchors.margins:    _margin
-                width:              toggleRow.width + ScreenTools.defaultFontPixelWidth * 2
-                height:             toggleRow.height + ScreenTools.defaultFontPixelHeight * 0.6
-                radius:             ScreenTools.defaultFontPixelHeight * 0.3
-                color:              "#e67e22"
-                border.color:       "white"
-                border.width:       1
-                visible:            !_panelVisible
-
-                RowLayout {
-                    id:                 toggleRow
-                    anchors.centerIn:   parent
-                    spacing:            ScreenTools.defaultFontPixelWidth * 0.5
-
-                    QGCColoredImage {
-                        width:              ScreenTools.defaultFontPixelHeight * 1.2
-                        height:             width
-                        source:             "/res/search.svg"
-                        color:              "white"
-                        Layout.alignment:   Qt.AlignVCenter
-                    }
-
-                    QGCLabel {
-                        text:           qsTr("Show SAR Panel")
-                        color:          "white"
-                        font.bold:      true
-                        font.pointSize: ScreenTools.defaultFontPointSize
-                    }
-                }
-
-                MouseArea {
-                    anchors.fill: parent
-                    onClicked: _panelVisible = true
-                }
             }
         }
 
@@ -348,7 +303,7 @@ Rectangle {
             id:             divider
             anchors.top:    parent.top
             anchors.bottom: parent.bottom
-            x:              mapSection.width
+            anchors.left:   mapSection.right
             width:          _dividerWidth
             color:          dividerMa.containsMouse || dividerMa.pressed
                             ? "#e67e22" : Qt.rgba(1, 1, 1, 0.2)
@@ -396,7 +351,9 @@ Rectangle {
                     if (pressed) {
                         var currentX = mouse.x + divider.x
                         var delta = currentX - _startX
-                        var newRatio = _startRatio + delta / contentArea.width
+                        // Available space excludes the fixed sidebar
+                        var availableWidth = contentArea.width - sarPanel.width - _margin * 0.5
+                        var newRatio = _startRatio + delta / availableWidth
                         _splitRatio = Math.max(_minSplitRatio, Math.min(_maxSplitRatio, newRatio))
                     }
                 }
@@ -407,18 +364,12 @@ Rectangle {
         Loader {
             id:                 videoPanelLoader
             anchors.top:        parent.top
+            anchors.left:       divider.right
             anchors.right:      parent.right
             anchors.bottom:     parent.bottom
-            width:              _videoPanelVisible
-                                ? parent.width * (1 - _splitRatio) - _dividerWidth / 2
-                                : 0
             visible:            _videoPanelVisible
             active:             _videoPanelVisible
             source:             "qrc:/custom/Sadron/SARVideoPanel.qml"
-
-            Behavior on width {
-                NumberAnimation { duration: 200; easing.type: Easing.InOutQuad }
-            }
         }
     }
 

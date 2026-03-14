@@ -24,6 +24,12 @@ FlightMap {
     property var    planMasterController
     property bool   pipMode:                    false   // true: map is shown in a small pip mode
     property var    toolInsets                          // Insets for the center viewport area
+    property rect   centerViewport:  toolInsets
+                                     ? Qt.rect(toolInsets.leftEdgeCenterInset,
+                                               toolInsets.topEdgeCenterInset,
+                                               _root.width - toolInsets.leftEdgeCenterInset - toolInsets.rightEdgeCenterInset,
+                                               _root.height - toolInsets.topEdgeCenterInset - toolInsets.bottomEdgeCenterInset)
+                                     : Qt.rect(0, 0, _root.width, _root.height)
 
     property var    _activeVehicle:             QGroundControl.multiVehicleManager.activeVehicle
     property var    _planMasterController:      planMasterController

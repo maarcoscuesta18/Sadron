@@ -507,8 +507,10 @@ int SARReTaskingManager::_selectPriorityWeighted(const QGeoCoordinate &targetCoo
         // Battery score: higher battery = higher score (normalized 0-1)
         double batteryScore = 0.5;  // default if unavailable
         if (v->batteries() && v->batteries()->count() > 0) {
-            // Battery percentage from vehicle fact
-            batteryScore = qBound(0.0, v->batteries()->get(0)->property("percentRemaining").toDouble() / 100.0, 1.0);
+            auto *batt = v->batteries()->get(0);
+            if (batt) {
+                batteryScore = qBound(0.0, batt->property("percentRemaining").toDouble() / 100.0, 1.0);
+            }
         }
 
         // Zone progress score: less progress = higher score (less work wasted)

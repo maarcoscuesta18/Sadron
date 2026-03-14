@@ -5,6 +5,7 @@
 #include <QtCore/QTimer>
 #include <QtCore/QHash>
 #include <QtCore/QJsonObject>
+#include <QtCore/QPointer>
 #include <QtPositioning/QGeoCoordinate>
 #include <QtQmlIntegration/QtQmlIntegration>
 
@@ -317,13 +318,13 @@ private:
     // ── Handoff internals ──
     bool _wouldCauseProximityConflict(int vehicleId, const QGeoCoordinate &targetCoord) const;
 
-    // ── Sub-system references ──
-    SARMissionManager   *_missionMgr = nullptr;
-    SARZoneManager      *_zoneMgr = nullptr;
-    SARTargetManager    *_targetMgr = nullptr;
-    SARReTaskingManager *_reTaskMgr = nullptr;
-    SARCoverageTracker  *_coverageMgr = nullptr;
-    MeshNetworkManager  *_meshMgr = nullptr;
+    // ── Sub-system references (QPointer guards against external destruction) ──
+    QPointer<SARMissionManager>   _missionMgr;
+    QPointer<SARZoneManager>      _zoneMgr;
+    QPointer<SARTargetManager>    _targetMgr;
+    QPointer<SARReTaskingManager> _reTaskMgr;
+    QPointer<SARCoverageTracker>  _coverageMgr;
+    QPointer<MeshNetworkManager>  _meshMgr;
 
     // ── Tick timer ──
     QTimer *_tickTimer = nullptr;

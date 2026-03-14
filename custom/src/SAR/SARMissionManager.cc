@@ -9,6 +9,8 @@
 #include "MissionManager.h"
 #include "PlanManager.h"
 #include "MissionItem.h"
+#include "FirmwarePlugin.h"
+#include "ParameterManager.h"
 #include "QGCMAVLink.h"
 
 #include <cmath>
@@ -52,6 +54,12 @@ SARMissionManager::SARMissionManager(SARZoneManager *zoneManager, SARCoverageTra
     _abortSafetyTimer->setSingleShot(true);
     _abortSafetyTimer->setInterval(30000);
     connect(_abortSafetyTimer, &QTimer::timeout, this, &SARMissionManager::_abortSafetyTimeout);
+
+    // Recovery safety timer — forces advancement if vehicles don't land/disarm within 30s
+    _recoverySafetyTimer = new QTimer(this);
+    _recoverySafetyTimer->setSingleShot(true);
+    _recoverySafetyTimer->setInterval(30000);
+    connect(_recoverySafetyTimer, &QTimer::timeout, this, &SARMissionManager::_recoverySafetyTimeout);
 }
 
 SARMissionManager::~SARMissionManager()
@@ -169,6 +177,9 @@ void SARMissionManager::abortOperation()
         return;
     }
 
+    // Disconnect mission-completion monitoring — we're aborting, not completing
+    _disconnectMissionCompleteSignals();
+
     _missionActive = false;
     if (_paused) {
         _paused = false;
@@ -251,16 +262,7 @@ QVariantList SARMissionManager::generatePatternWaypoints(const QVariantList &pol
         }
         return QVariantList();
     case SectorSearch:
-        if (!polygon.isEmpty()) {
-            QGeoCoordinate datum = polygon[0].value<QGeoCoordinate>();
-            double maxDist = 0;
-            for (const QVariant &v : polygon) {
-                double d = datum.distanceTo(v.value<QGeoCoordinate>());
-                if (d > maxDist) maxDist = d;
-            }
-            return _generateSectorSearch(datum, maxDist, _searchAltitude);
-        }
-        return QVariantList();
+        return _generateSectorSearch(polygon, _searchAltitude);
     }
 
     return QVariantList();
@@ -310,15 +312,7 @@ QVariantList SARMissionManager::generateZoneTransect(int zoneId)
         }
         break;
     case SectorSearch:
-        if (!polygon.isEmpty()) {
-            QGeoCoordinate datum = polygon[0].value<QGeoCoordinate>();
-            double maxDist = 0;
-            for (const QVariant &v : polygon) {
-                double d = datum.distanceTo(v.value<QGeoCoordinate>());
-                if (d > maxDist) maxDist = d;
-            }
-            waypoints = _generateSectorSearch(datum, maxDist, altitude);
-        }
+        waypoints = _generateSectorSearch(polygon, altitude);
         break;
     }
 
@@ -346,6 +340,7 @@ void SARMissionManager::generateAllTransects()
     }
 
     emit transectsGenerated();
+    emit readinessChanged();
     qCDebug(SARMissionManagerLog) << "Generated transects for all" << zones->count() << "zones";
 }
 
@@ -382,15 +377,120 @@ void SARMissionManager::autoAssignZones()
         return;
     }
 
-    // Round-robin assignment over connected vehicles
+    // ── Spatially-aware greedy assignment ──
+    // Assign each vehicle to the nearest unassigned zone, minimising transit
+    // distance.  When there are more zones than vehicles, the extra zones are
+    // assigned to the nearest already-assigned vehicle (load balancing).
+
     QmlObjectListModel *zones = _zoneManager->zones();
-    int vIdx = 0;
+
+    // Collect unassigned zone IDs and their centroids
+    struct ZoneInfo { int zoneId; QGeoCoordinate centroid; };
+    QList<ZoneInfo> unassigned;
     for (int i = 0; i < zones->count(); i++) {
         auto *zone = qobject_cast<SARZone *>(zones->get(i));
-        if (zone && zone->assignedVehicle() < 0) {
-            _zoneManager->assignZoneToVehicle(zone->zoneId(), vehicleIds[vIdx % vehicleIds.size()]);
-            vIdx++;
+        if (!zone || zone->assignedVehicle() >= 0)
+            continue;
+
+        QVariantList poly = zone->polygon();
+        if (poly.isEmpty()) continue;
+
+        double latSum = 0.0, lonSum = 0.0;
+        for (const QVariant &v : poly) {
+            QGeoCoordinate c = v.value<QGeoCoordinate>();
+            latSum += c.latitude();
+            lonSum += c.longitude();
         }
+        unassigned.append({ zone->zoneId(),
+                            QGeoCoordinate(latSum / poly.size(), lonSum / poly.size()) });
+    }
+
+    if (unassigned.isEmpty()) {
+        qCDebug(SARMissionManagerLog) << "autoAssignZones: no unassigned zones";
+        return;
+    }
+
+    // Collect vehicle positions
+    struct VehicleInfo { int id; QGeoCoordinate pos; };
+    QList<VehicleInfo> vehiclePool;
+    vehiclePool.reserve(vehicleIds.size());
+    for (int vid : vehicleIds) {
+        Vehicle *v = mvm->getVehicleById(vid);
+        QGeoCoordinate pos;
+        if (v) pos = v->coordinate();
+        if (!pos.isValid()) {
+            // Fallback: use home position or a default
+            if (v) pos = v->homePosition();
+        }
+        vehiclePool.append({ vid, pos });
+    }
+
+    // Phase 1: Greedy nearest-centroid matching (one zone per vehicle)
+    QSet<int> assignedVehicleIds;
+    QSet<int> assignedZoneIdxs;
+
+    int assignRounds = qMin(vehiclePool.size(), unassigned.size());
+    for (int round = 0; round < assignRounds; round++) {
+        double bestDist = std::numeric_limits<double>::max();
+        int bestVIdx = -1, bestZIdx = -1;
+
+        for (int vi = 0; vi < vehiclePool.size(); vi++) {
+            if (assignedVehicleIds.contains(vi)) continue;
+            for (int zi = 0; zi < unassigned.size(); zi++) {
+                if (assignedZoneIdxs.contains(zi)) continue;
+
+                double dist;
+                if (vehiclePool[vi].pos.isValid()) {
+                    dist = vehiclePool[vi].pos.distanceTo(unassigned[zi].centroid);
+                } else {
+                    // No position info — use index-based ordering (fallback)
+                    dist = static_cast<double>(std::abs(vi - zi)) * 1e6;
+                }
+
+                if (dist < bestDist) {
+                    bestDist = dist;
+                    bestVIdx = vi;
+                    bestZIdx = zi;
+                }
+            }
+        }
+
+        if (bestVIdx >= 0 && bestZIdx >= 0) {
+            _zoneManager->assignZoneToVehicle(unassigned[bestZIdx].zoneId,
+                                               vehiclePool[bestVIdx].id);
+            assignedVehicleIds.insert(bestVIdx);
+            assignedZoneIdxs.insert(bestZIdx);
+            qCDebug(SARMissionManagerLog) << "Assigned zone" << unassigned[bestZIdx].zoneId
+                                           << "to vehicle" << vehiclePool[bestVIdx].id
+                                           << "(dist:" << bestDist << "m)";
+        }
+    }
+
+    // Phase 2: If more zones than vehicles, assign remaining zones to the
+    // nearest already-assigned vehicle (load balancing).
+    for (int zi = 0; zi < unassigned.size(); zi++) {
+        if (assignedZoneIdxs.contains(zi)) continue;
+
+        double bestDist = std::numeric_limits<double>::max();
+        int bestVehicleId = vehicleIds[0]; // fallback
+
+        for (int vi = 0; vi < vehiclePool.size(); vi++) {
+            double dist;
+            if (vehiclePool[vi].pos.isValid()) {
+                dist = vehiclePool[vi].pos.distanceTo(unassigned[zi].centroid);
+            } else {
+                dist = static_cast<double>(vi) * 1e6;
+            }
+            if (dist < bestDist) {
+                bestDist = dist;
+                bestVehicleId = vehiclePool[vi].id;
+            }
+        }
+
+        _zoneManager->assignZoneToVehicle(unassigned[zi].zoneId, bestVehicleId);
+        qCDebug(SARMissionManagerLog) << "Assigned extra zone" << unassigned[zi].zoneId
+                                       << "to vehicle" << bestVehicleId
+                                       << "(dist:" << bestDist << "m)";
     }
 }
 
@@ -517,41 +617,97 @@ QVariantList SARMissionManager::_generateExpandingSquare(const QGeoCoordinate &c
     return waypoints;
 }
 
-QVariantList SARMissionManager::_generateSectorSearch(const QGeoCoordinate &datum, double radius, double altitude) const
+QVariantList SARMissionManager::_generateSectorSearch(const QVariantList &polygon, double altitude) const
 {
     QVariantList waypoints;
+    if (polygon.size() < 3) return waypoints;
 
-    double metersPerDegreeLat = 111320.0;
-    double metersPerDegreeLon = 111320.0 * std::cos(datum.latitude() * M_PI / 180.0);
+    // ── Helper: 2D ray–segment intersection ──
+    // Returns the parameter t along the ray (origin + t*dir) at which it
+    // hits the segment (p1→p2), or -1 if no hit.  We work in a local
+    // (dlat, dlon) frame so the maths stays simple.
+    struct Vec2 { double x, y; };
+    auto raySegIntersect = [](Vec2 o, Vec2 d, Vec2 p1, Vec2 p2, double &t) -> bool {
+        Vec2 s = { p2.x - p1.x, p2.y - p1.y };
+        double denom = d.x * s.y - d.y * s.x;
+        if (std::abs(denom) < 1e-12) return false;          // parallel
+        double u = ((p1.x - o.x) * s.y - (p1.y - o.y) * s.x) / denom;
+        double v = ((p1.x - o.x) * d.y - (p1.y - o.y) * d.x) / denom;
+        if (u > 1e-9 && v >= 0.0 && v <= 1.0) {             // t > 0 (forward ray)
+            t = u;
+            return true;
+        }
+        return false;
+    };
 
-    // Generate 3 sectors (120 degrees each) from datum
+    // ── Compute centroid ──
+    double latSum = 0, lonSum = 0;
+    for (const QVariant &v : polygon) {
+        QGeoCoordinate c = v.value<QGeoCoordinate>();
+        latSum += c.latitude();
+        lonSum += c.longitude();
+    }
+    const double cLat = latSum / polygon.size();
+    const double cLon = lonSum / polygon.size();
+
+    const double metersPerDegreeLat = 111320.0;
+    const double metersPerDegreeLon = 111320.0 * std::cos(cLat * M_PI / 180.0);
+
+    // Build polygon vertices in a local metre-offset frame centred on the centroid
+    QVector<Vec2> polyPts;
+    polyPts.reserve(polygon.size());
+    for (const QVariant &v : polygon) {
+        QGeoCoordinate c = v.value<QGeoCoordinate>();
+        polyPts.append({ (c.latitude()  - cLat) * metersPerDegreeLat,
+                         (c.longitude() - cLon) * metersPerDegreeLon });
+    }
+
+    // Helper: cast a ray from the centroid (0,0) at a given angle and return
+    // the distance to the nearest polygon edge intersection.
+    auto rayDistToBoundary = [&](double angle) -> double {
+        Vec2 origin = { 0, 0 };
+        Vec2 dir    = { std::cos(angle), std::sin(angle) };
+        double bestT = std::numeric_limits<double>::max();
+        for (int i = 0; i < polyPts.size(); i++) {
+            int j = (i + 1) % polyPts.size();
+            double t;
+            if (raySegIntersect(origin, dir, polyPts[i], polyPts[j], t)) {
+                if (t < bestT) bestT = t;
+            }
+        }
+        return (bestT < std::numeric_limits<double>::max()) ? bestT : 0.0;
+    };
+
+    // ── Generate 3 sectors (120 deg each) from centroid, clipped to polygon ──
     const int numSectors = 3;
     const double sectorAngle = 2.0 * M_PI / numSectors;
+    const int arcPoints = 8;
 
     for (int s = 0; s < numSectors; s++) {
         double angle1 = s * sectorAngle;
         double angle2 = angle1 + sectorAngle;
 
-        // Datum point
-        waypoints.append(QVariant::fromValue(QGeoCoordinate(datum.latitude(), datum.longitude(), altitude)));
+        // Back to centroid
+        waypoints.append(QVariant::fromValue(QGeoCoordinate(cLat, cLon, altitude)));
 
-        // Point along first radial
-        double lat1 = datum.latitude() + (radius * std::cos(angle1)) / metersPerDegreeLat;
-        double lon1 = datum.longitude() + (radius * std::sin(angle1)) / metersPerDegreeLon;
+        // First radial – clipped to polygon boundary
+        double r1 = rayDistToBoundary(angle1);
+        double lat1 = cLat + (r1 * std::cos(angle1)) / metersPerDegreeLat;
+        double lon1 = cLon + (r1 * std::sin(angle1)) / metersPerDegreeLon;
         waypoints.append(QVariant::fromValue(QGeoCoordinate(lat1, lon1, altitude)));
 
-        // Arc points along the sector
-        const int arcPoints = 5;
+        // Arc points along the sector edge, each clipped individually
         for (int a = 1; a <= arcPoints; a++) {
             double angle = angle1 + (angle2 - angle1) * a / arcPoints;
-            double lat = datum.latitude() + (radius * std::cos(angle)) / metersPerDegreeLat;
-            double lon = datum.longitude() + (radius * std::sin(angle)) / metersPerDegreeLon;
+            double r = rayDistToBoundary(angle);
+            double lat = cLat + (r * std::cos(angle)) / metersPerDegreeLat;
+            double lon = cLon + (r * std::sin(angle)) / metersPerDegreeLon;
             waypoints.append(QVariant::fromValue(QGeoCoordinate(lat, lon, altitude)));
         }
     }
 
-    // Return to datum
-    waypoints.append(QVariant::fromValue(QGeoCoordinate(datum.latitude(), datum.longitude(), altitude)));
+    // Return to centroid
+    waypoints.append(QVariant::fromValue(QGeoCoordinate(cLat, cLon, altitude)));
 
     return waypoints;
 }
@@ -791,8 +947,12 @@ void SARMissionManager::_uploadMissionToVehicle(Vehicle *vehicle, SARZone *zone)
     qCDebug(SARMissionManagerLog) << "Uploading" << missionItems.size() << "mission items to Vehicle"
                                    << vehicle->id() << "for zone" << zone->zoneId();
 
-    // Connect upload progress and completion signals
+    // Connect upload progress and completion signals.
+    // Disconnect first to prevent stacked connections if retrying the same vehicle.
     PlanManager *pm = vehicle->missionManager();
+
+    disconnect(pm, &PlanManager::progressPctChanged, this, nullptr);
+    disconnect(pm, &PlanManager::sendComplete, this, &SARMissionManager::_onUploadComplete);
 
     connect(pm, &PlanManager::progressPctChanged, this, [this, vehicle](double pct) {
         emit missionUploadProgress(vehicle->id(), pct);
@@ -870,9 +1030,23 @@ void SARMissionManager::_startAllUploadedVehicles()
 {
     auto *mvm = MultiVehicleManager::instance();
 
+    _missionInProgressVehicles.clear();
+
     for (auto it = _pendingUploads.constBegin(); it != _pendingUploads.constEnd(); ++it) {
         Vehicle *v = mvm->getVehicleById(it.key());
         if (v) {
+            // Track this vehicle for mission-completion monitoring
+            _missionInProgressVehicles.insert(v->id());
+
+            // Monitor flight mode changes to detect when mission ends
+            connect(v, &Vehicle::flightModeChanged, this, &SARMissionManager::_onVehicleFlightModeChanged);
+
+            // For PX4 multi-vehicle: exempt Mission mode from RC loss failsafe.
+            // QGC sends MANUAL_CONTROL only to the active vehicle, so non-active
+            // vehicles trigger RC loss failsafe and go to Hold/RTL.
+            // COM_RCL_EXCEPT bit 0 = Mission mode exempt from RC loss.
+            _configureRCLossExemption(v);
+
             // startMission() handles: set Mission mode → arm → auto-takeoff (PX4)
             // or: set Auto mode → arm → MAV_CMD_MISSION_START (ArduPilot)
             v->startMission();
@@ -891,7 +1065,251 @@ void SARMissionManager::_startAllUploadedVehicles()
     _phase = Searching;
     emit phaseChanged();
     emit deploymentComplete();
-    qCDebug(SARMissionManagerLog) << "Deployment complete — entering Searching phase";
+    qCDebug(SARMissionManagerLog) << "Deployment complete — entering Searching phase ("
+                                   << _missionInProgressVehicles.size() << "vehicles tracked)";
+}
+
+void SARMissionManager::_configureRCLossExemption(Vehicle *v)
+{
+    if (!v || !v->parameterManager()) return;
+
+    // PX4: COM_RCL_EXCEPT — bitmask of modes exempt from RC loss failsafe
+    //   bit 0 (1) = Mission, bit 1 (2) = Hold, bit 2 (4) = Offboard
+    const QString paramName = QStringLiteral("COM_RCL_EXCEPT");
+
+    if (v->parameterManager()->parameterExists(-1, paramName)) {
+        Fact *param = v->parameterManager()->getParameter(-1, paramName);
+        if (param) {
+            int current = param->rawValue().toInt();
+            if (!(current & 0x01)) {
+                param->setRawValue(current | 0x01);  // Set bit 0: Mission mode exempt
+                qCDebug(SARMissionManagerLog) << "V" << v->id()
+                    << "COM_RCL_EXCEPT set to" << (current | 0x01)
+                    << "(Mission mode exempt from RC loss)";
+            }
+        }
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ── Mission-completion monitoring ──
+// ══════════════════════════════════════════════════════════════════════════════
+
+void SARMissionManager::_onVehicleFlightModeChanged(const QString &flightMode)
+{
+    if (_phase != Searching && _phase != Investigating) return;
+
+    auto *v = qobject_cast<Vehicle *>(sender());
+    if (!v || !_missionInProgressVehicles.contains(v->id())) return;
+
+    // Get the firmware-specific mode names for comparison
+    FirmwarePlugin *fw = v->firmwarePlugin();
+    if (!fw) return;
+
+    QString missionMode = fw->missionFlightMode();
+    QString rtlMode     = fw->rtlFlightMode();
+    QString pauseMode   = fw->pauseFlightMode();
+
+    // A vehicle leaving Mission mode can mean:
+    //  - RTL: mission reached the RTL item at the end → expected completion path
+    //  - Pause/Hold: operator paused, or PX4 transitioned after mission finished + RTL landed
+    //  - Other: unexpected mode change
+    //
+    // We treat exiting Mission mode as "mission complete" ONLY if the new mode
+    // is RTL (reaching the final mission item) or pause/hold (PX4 auto-loiter
+    // after the mission sequence is exhausted).
+    if (flightMode == missionMode) {
+        // Still in Mission mode — not done yet
+        return;
+    }
+
+    if (flightMode == rtlMode || flightMode == pauseMode) {
+        _missionInProgressVehicles.remove(v->id());
+        disconnect(v, &Vehicle::flightModeChanged, this, &SARMissionManager::_onVehicleFlightModeChanged);
+
+        // Mark the zone as Completed
+        if (_zoneManager) {
+            SARZone *zone = _zoneManager->zoneForVehicle(v->id());
+            if (zone && zone->status() == SARZone::Active) {
+                zone->setStatus(SARZone::Completed);
+                zone->setProgress(1.0);
+            }
+        }
+
+        qCDebug(SARMissionManagerLog) << "Vehicle" << v->id() << "mission completed (mode:" << flightMode
+                                       << ") —" << _missionInProgressVehicles.size() << "still in progress";
+
+        _checkAllMissionsComplete();
+    } else {
+        qCWarning(SARMissionManagerLog) << "Vehicle" << v->id()
+                                         << "unexpectedly switched to mode:" << flightMode
+                                         << "during active SAR mission";
+    }
+}
+
+void SARMissionManager::_checkAllMissionsComplete()
+{
+    if (!_missionInProgressVehicles.isEmpty()) return;
+
+    qCDebug(SARMissionManagerLog) << "All vehicle missions completed — landing and disarming all vehicles";
+
+    _phase = Recovery;
+    emit phaseChanged();
+
+    // Trigger the recovery sequence: land → disarm all vehicles
+    _recoveryPhase_landVehicles();
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ── Recovery (normal completion) land & disarm sequence ──
+// ══════════════════════════════════════════════════════════════════════════════
+
+void SARMissionManager::_recoveryPhase_landVehicles()
+{
+    _recoveryPendingVehicles.clear();
+
+    auto *mvm = MultiVehicleManager::instance();
+    QmlObjectListModel *vehicles = mvm->vehicles();
+
+    for (int i = 0; i < vehicles->count(); i++) {
+        auto *v = qobject_cast<Vehicle *>(vehicles->get(i));
+        if (v && v->flying()) {
+            _recoveryPendingVehicles.insert(v->id());
+            connect(v, &Vehicle::flyingChanged, this, &SARMissionManager::_onVehicleLandedForRecovery);
+            v->guidedModeLand();
+            qCDebug(SARMissionManagerLog) << "Recovery: commanding Vehicle" << v->id() << "to land";
+        }
+    }
+
+    if (_recoveryPendingVehicles.isEmpty()) {
+        qCDebug(SARMissionManagerLog) << "Recovery: no flying vehicles — proceeding to disarm";
+        _recoveryPhase_disarmVehicles();
+    } else {
+        _recoverySafetyTimer->start();
+    }
+}
+
+void SARMissionManager::_onVehicleLandedForRecovery()
+{
+    auto *v = qobject_cast<Vehicle *>(sender());
+    if (!v) return;
+
+    if (!v->flying()) {
+        _recoveryPendingVehicles.remove(v->id());
+        disconnect(v, &Vehicle::flyingChanged, this, &SARMissionManager::_onVehicleLandedForRecovery);
+        qCDebug(SARMissionManagerLog) << "Recovery: Vehicle" << v->id() << "has landed ("
+                                       << _recoveryPendingVehicles.size() << "remaining)";
+
+        if (_recoveryPendingVehicles.isEmpty()) {
+            _recoverySafetyTimer->stop();
+            _recoveryPhase_disarmVehicles();
+        }
+    }
+}
+
+void SARMissionManager::_recoveryPhase_disarmVehicles()
+{
+    _recoveryPendingVehicles.clear();
+
+    auto *mvm = MultiVehicleManager::instance();
+    QmlObjectListModel *vehicles = mvm->vehicles();
+
+    for (int i = 0; i < vehicles->count(); i++) {
+        auto *v = qobject_cast<Vehicle *>(vehicles->get(i));
+        if (v && v->armed() && !v->flying()) {
+            _recoveryPendingVehicles.insert(v->id());
+            connect(v, &Vehicle::armedChanged, this, &SARMissionManager::_onVehicleDisarmedForRecovery);
+            v->setArmed(false, false);
+            qCDebug(SARMissionManagerLog) << "Recovery: disarming Vehicle" << v->id();
+        }
+    }
+
+    if (_recoveryPendingVehicles.isEmpty()) {
+        qCDebug(SARMissionManagerLog) << "Recovery: no armed vehicles — recovery complete";
+        _recoveryComplete();
+    } else {
+        _recoverySafetyTimer->start();
+    }
+}
+
+void SARMissionManager::_onVehicleDisarmedForRecovery()
+{
+    auto *v = qobject_cast<Vehicle *>(sender());
+    if (!v) return;
+
+    if (!v->armed()) {
+        _recoveryPendingVehicles.remove(v->id());
+        disconnect(v, &Vehicle::armedChanged, this, &SARMissionManager::_onVehicleDisarmedForRecovery);
+        qCDebug(SARMissionManagerLog) << "Recovery: Vehicle" << v->id() << "disarmed ("
+                                       << _recoveryPendingVehicles.size() << "remaining)";
+
+        if (_recoveryPendingVehicles.isEmpty()) {
+            _recoverySafetyTimer->stop();
+            _recoveryComplete();
+        }
+    }
+}
+
+void SARMissionManager::_recoveryComplete()
+{
+    _missionActive = false;
+    emit missionActiveChanged();
+
+    qCDebug(SARMissionManagerLog) << "Recovery complete — all vehicles landed and disarmed";
+    emit operationCompleted();
+}
+
+void SARMissionManager::_recoverySafetyTimeout()
+{
+    qCWarning(SARMissionManagerLog) << "Recovery safety timeout — forcing advancement with"
+                                     << _recoveryPendingVehicles.size() << "vehicles still pending";
+
+    // Disconnect any remaining vehicle signals
+    auto *mvm = MultiVehicleManager::instance();
+    QmlObjectListModel *vehicles = mvm->vehicles();
+    for (int i = 0; i < vehicles->count(); i++) {
+        auto *v = qobject_cast<Vehicle *>(vehicles->get(i));
+        if (v && _recoveryPendingVehicles.contains(v->id())) {
+            disconnect(v, &Vehicle::flyingChanged, this, &SARMissionManager::_onVehicleLandedForRecovery);
+            disconnect(v, &Vehicle::armedChanged, this, &SARMissionManager::_onVehicleDisarmedForRecovery);
+        }
+    }
+
+    _recoveryPendingVehicles.clear();
+
+    // Determine which phase timed out and advance accordingly
+    // Check if any vehicles are still flying — if so, skip to disarm; otherwise complete
+    bool anyFlying = false;
+    for (int i = 0; i < vehicles->count(); i++) {
+        auto *v = qobject_cast<Vehicle *>(vehicles->get(i));
+        if (v && v->flying()) {
+            anyFlying = true;
+            break;
+        }
+    }
+
+    if (anyFlying) {
+        // Timed out during land phase — try disarm anyway
+        _recoveryPhase_disarmVehicles();
+    } else {
+        // Timed out during disarm phase — just complete
+        _recoveryComplete();
+    }
+}
+
+void SARMissionManager::_disconnectMissionCompleteSignals()
+{
+    auto *mvm = MultiVehicleManager::instance();
+    QmlObjectListModel *vehicles = mvm->vehicles();
+
+    for (int i = 0; i < vehicles->count(); i++) {
+        auto *v = qobject_cast<Vehicle *>(vehicles->get(i));
+        if (v) {
+            disconnect(v, &Vehicle::flightModeChanged, this, &SARMissionManager::_onVehicleFlightModeChanged);
+        }
+    }
+
+    _missionInProgressVehicles.clear();
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <QtCore/QPointer>
+
 #include "SimpleMissionItem.h"
 
 class PlanMasterController;
@@ -52,6 +54,6 @@ private:
     void _setLaunchTakeoffAtSameLocation(bool launchTakeoffAtSameLocation);
 
 
-    MissionSettingsItem* _settingsItem;
+    QPointer<MissionSettingsItem> _settingsItem;
     bool _launchTakeoffAtSameLocation = true;
 };

@@ -18,8 +18,6 @@ Rectangle {
     property bool showSlopeOverlay:   false
     property bool showHydroOverlay:   false
 
-    signal closePanel()
-
     width:  ScreenTools.defaultFontPixelWidth * 32
     height: parent ? parent.height : 400
     color:  qgcPal.window
@@ -72,29 +70,6 @@ Rectangle {
                             font.bold:  true
                             font.pointSize: ScreenTools.mediumFontPointSize
                             Layout.fillWidth: true
-                        }
-
-                        // Close panel button
-                        Rectangle {
-                            width:  ScreenTools.defaultFontPixelHeight * 1.2
-                            height: width
-                            radius: width / 2
-                            color:  closeMa.containsMouse ? Qt.rgba(1, 1, 1, 0.2) : "transparent"
-
-                            QGCLabel {
-                                anchors.centerIn:   parent
-                                text:               "X"
-                                color:              qgcPal.text
-                                font.bold:          true
-                                font.pointSize:     ScreenTools.smallFontPointSize
-                            }
-
-                            MouseArea {
-                                id:             closeMa
-                                anchors.fill:   parent
-                                hoverEnabled:   true
-                                onClicked:      _root.closePanel()
-                            }
                         }
                     }
 
@@ -1081,6 +1056,468 @@ Rectangle {
                         color:      "#e74c3c"
                         font.italic: true
                         font.pointSize: ScreenTools.smallFontPointSize
+                    }
+                }
+            }
+
+            // ══════════════════════════════════════════════════════════════
+            // ── Coordination (Multi-Vehicle) ──
+            // ══════════════════════════════════════════════════════════════
+            Rectangle {
+                Layout.fillWidth:   true
+                implicitHeight:     coordCol.height + _margin * 2
+                radius:             _margin
+                color:              qgcPal.windowShade
+
+                ColumnLayout {
+                    id: coordCol
+                    anchors.left:       parent.left
+                    anchors.right:      parent.right
+                    anchors.top:        parent.top
+                    anchors.margins:    _margin
+                    spacing:            _margin
+
+                    // Section header with status badge and collapse toggle
+                    RowLayout {
+                        Layout.fillWidth: true
+
+                        QGCLabel {
+                            text:               qsTr("Coordination")
+                            font.bold:          true
+                            color:              "#e67e22"
+                            Layout.fillWidth:   true
+                        }
+
+                        // Status badge
+                        Rectangle {
+                            width:      coordStatusLabel.width + 12
+                            height:     coordStatusLabel.height + 6
+                            radius:     height / 2
+                            color: {
+                                if (!vehicleCoordinator || !vehicleCoordinator.enabled) return "#888"
+                                var conflicts = vehicleCoordinator.activeConflictCount
+                                var commsLoss = vehicleCoordinator.dronesInCommsLoss
+                                var overlaps  = vehicleCoordinator.overlapCount
+                                if (conflicts > 0 || commsLoss > 0) return "#e74c3c"
+                                if (overlaps > 0) return "#f39c12"
+                                return "#2ecc71"
+                            }
+
+                            QGCLabel {
+                                id: coordStatusLabel
+                                anchors.centerIn: parent
+                                text: {
+                                    if (!vehicleCoordinator || !vehicleCoordinator.enabled) return "OFF"
+                                    var conflicts = vehicleCoordinator.activeConflictCount
+                                    var commsLoss = vehicleCoordinator.dronesInCommsLoss
+                                    if (conflicts > 0 || commsLoss > 0) return "ALERT"
+                                    if (vehicleCoordinator.overlapCount > 0) return "WARN"
+                                    return "OK"
+                                }
+                                color:          "white"
+                                font.pointSize: ScreenTools.smallFontPointSize
+                                font.bold:      true
+                            }
+                        }
+
+                        // Collapse toggle
+                        Rectangle {
+                            width:  ScreenTools.defaultFontPixelHeight * 1.2
+                            height: width
+                            radius: width / 2
+                            color:  coordCollapseMa.containsMouse ? Qt.rgba(1, 1, 1, 0.2) : "transparent"
+
+                            QGCLabel {
+                                anchors.centerIn: parent
+                                text:       coordContentCol.visible ? "\u25B2" : "\u25BC"
+                                color:      qgcPal.text
+                                font.pointSize: ScreenTools.smallFontPointSize
+                            }
+
+                            MouseArea {
+                                id:             coordCollapseMa
+                                anchors.fill:   parent
+                                hoverEnabled:   true
+                                onClicked:      coordContentCol.visible = !coordContentCol.visible
+                            }
+                        }
+                    }
+
+                    // Collapsible content
+                    ColumnLayout {
+                        id:                 coordContentCol
+                        Layout.fillWidth:   true
+                        spacing:            _margin
+                        visible:            false
+
+                        // ── Enable toggle ──
+                        RowLayout {
+                            Layout.fillWidth: true
+
+                            QGCLabel {
+                                text:   "Enable Coordination"
+                                color:  qgcPal.text
+                                font.pointSize: ScreenTools.smallFontPointSize
+                                Layout.fillWidth: true
+                            }
+
+                            Switch {
+                                checked: vehicleCoordinator ? vehicleCoordinator.enabled : false
+                                onToggled: { if (vehicleCoordinator) vehicleCoordinator.enabled = checked }
+                            }
+                        }
+
+                        // ── Separator ──
+                        Rectangle { Layout.fillWidth: true; height: 1; color: Qt.rgba(1, 1, 1, 0.15) }
+
+                        // ── Sector Deconfliction ──
+                        QGCLabel {
+                            text:   "Sector Deconfliction"
+                            color:  "#3498db"
+                            font.bold: true
+                            font.pointSize: ScreenTools.smallFontPointSize
+                            visible: vehicleCoordinator && vehicleCoordinator.enabled
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: _margin * 3
+                            visible: vehicleCoordinator && vehicleCoordinator.enabled
+
+                            QGCLabel {
+                                text:   "Overlaps: " + (vehicleCoordinator ? vehicleCoordinator.overlapCount : 0)
+                                color:  vehicleCoordinator && vehicleCoordinator.overlapCount > 0 ? "#f39c12" : "#2ecc71"
+                                font.pointSize: ScreenTools.smallFontPointSize
+                            }
+
+                            QGCLabel {
+                                text:   "Violations: " + (vehicleCoordinator ? vehicleCoordinator.boundaryViolationCount : 0)
+                                color:  vehicleCoordinator && vehicleCoordinator.boundaryViolationCount > 0 ? "#e74c3c" : "#2ecc71"
+                                font.pointSize: ScreenTools.smallFontPointSize
+                            }
+                        }
+
+                        // Overlap list
+                        ListView {
+                            Layout.fillWidth: true
+                            height:           Math.min(contentHeight, ScreenTools.defaultFontPixelHeight * 4)
+                            clip:             true
+                            spacing:          2
+                            visible:          vehicleCoordinator && vehicleCoordinator.overlapCount > 0
+                            model:            vehicleCoordinator ? vehicleCoordinator.overlaps : null
+
+                            delegate: Rectangle {
+                                width:  ListView.view.width
+                                height: coordOverlapRow.height + 4
+                                radius: 3
+                                color:  Qt.rgba(0.95, 0.6, 0.07, 0.15)
+
+                                RowLayout {
+                                    id: coordOverlapRow
+                                    anchors.left:   parent.left
+                                    anchors.right:  parent.right
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    anchors.margins: 4
+                                    spacing: _margin
+
+                                    QGCLabel {
+                                        text:   "Z" + object.zoneIdA + " / Z" + object.zoneIdB
+                                        color:  "#f39c12"
+                                        font.pointSize: ScreenTools.smallFontPointSize
+                                        font.bold: true
+                                    }
+
+                                    QGCLabel {
+                                        text:   object.overlapPercent.toFixed(1) + "% overlap"
+                                        color:  "#aaa"
+                                        font.pointSize: ScreenTools.smallFontPointSize
+                                        Layout.fillWidth: true
+                                        horizontalAlignment: Text.AlignRight
+                                    }
+                                }
+                            }
+                        }
+
+                        // ── Separator ──
+                        Rectangle {
+                            Layout.fillWidth: true; height: 1; color: Qt.rgba(1, 1, 1, 0.15)
+                            visible: vehicleCoordinator && vehicleCoordinator.enabled
+                        }
+
+                        // ── Altitude Separation ──
+                        QGCLabel {
+                            text:   "Altitude Separation"
+                            color:  "#3498db"
+                            font.bold: true
+                            font.pointSize: ScreenTools.smallFontPointSize
+                            visible: vehicleCoordinator && vehicleCoordinator.enabled
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: _margin * 3
+                            visible: vehicleCoordinator && vehicleCoordinator.enabled
+
+                            QGCLabel {
+                                text:   "Conflicts: " + (vehicleCoordinator ? vehicleCoordinator.activeConflictCount : 0)
+                                color:  vehicleCoordinator && vehicleCoordinator.activeConflictCount > 0 ? "#e74c3c" : "#2ecc71"
+                                font.pointSize: ScreenTools.smallFontPointSize
+                            }
+
+                            QGCLabel {
+                                text:   "Bubble: " + (vehicleCoordinator ? vehicleCoordinator.safetyBubbleHorizontalM.toFixed(0) + "m H / " + vehicleCoordinator.safetyBubbleVerticalM.toFixed(0) + "m V" : "N/A")
+                                color:  "#aaa"
+                                font.pointSize: ScreenTools.smallFontPointSize
+                            }
+                        }
+
+                        // Conflict list
+                        ListView {
+                            Layout.fillWidth: true
+                            height:           Math.min(contentHeight, ScreenTools.defaultFontPixelHeight * 6)
+                            clip:             true
+                            spacing:          _margin
+                            visible:          vehicleCoordinator && vehicleCoordinator.activeConflictCount > 0
+                            model:            vehicleCoordinator ? vehicleCoordinator.conflicts : null
+
+                            delegate: Rectangle {
+                                width:  ListView.view.width
+                                height: coordConflictCol.height + _margin * 2
+                                radius: _margin
+                                color:  object.severity === 1 ? Qt.rgba(0.9, 0.3, 0.24, 0.2) : Qt.rgba(0.95, 0.6, 0.07, 0.15)
+                                border.color: object.severity === 1 ? "#e74c3c" : "#f39c12"
+                                border.width: 1
+
+                                ColumnLayout {
+                                    id: coordConflictCol
+                                    anchors.left:   parent.left
+                                    anchors.right:  parent.right
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    anchors.margins: _margin
+                                    spacing: 2
+
+                                    RowLayout {
+                                        spacing: _margin
+
+                                        Rectangle {
+                                            width:  coordSevLabel.width + 8
+                                            height: coordSevLabel.height + 4
+                                            radius: 3
+                                            color:  object.severity === 1 ? "#e74c3c" : "#f39c12"
+
+                                            QGCLabel {
+                                                id: coordSevLabel
+                                                anchors.centerIn: parent
+                                                text:   object.severity === 1 ? "CRITICAL" : "WARNING"
+                                                color:  "white"
+                                                font.pointSize: ScreenTools.smallFontPointSize * 0.85
+                                                font.bold: true
+                                            }
+                                        }
+
+                                        QGCLabel {
+                                            text:   "V" + object.vehicleIdA + " / V" + object.vehicleIdB
+                                            color:  qgcPal.text
+                                            font.pointSize: ScreenTools.smallFontPointSize
+                                            font.bold: true
+                                        }
+                                    }
+
+                                    RowLayout {
+                                        spacing: _margin * 2
+
+                                        QGCLabel {
+                                            text:   "H: " + object.horizontalDistM.toFixed(1) + "m"
+                                            color:  "#aaa"
+                                            font.pointSize: ScreenTools.smallFontPointSize
+                                        }
+                                        QGCLabel {
+                                            text:   "V: " + object.verticalDistM.toFixed(1) + "m"
+                                            color:  "#aaa"
+                                            font.pointSize: ScreenTools.smallFontPointSize
+                                        }
+                                    }
+
+                                    QGCLabel {
+                                        text:   object.resolution
+                                        color:  "#2ecc71"
+                                        font.pointSize: ScreenTools.smallFontPointSize * 0.9
+                                        visible: object.resolution !== ""
+                                    }
+                                }
+                            }
+                        }
+
+                        // ── Separator ──
+                        Rectangle {
+                            Layout.fillWidth: true; height: 1; color: Qt.rgba(1, 1, 1, 0.15)
+                            visible: vehicleCoordinator && vehicleCoordinator.enabled
+                        }
+
+                        // ── Communications ──
+                        QGCLabel {
+                            text:   "Communications"
+                            color:  "#3498db"
+                            font.bold: true
+                            font.pointSize: ScreenTools.smallFontPointSize
+                            visible: vehicleCoordinator && vehicleCoordinator.enabled
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: _margin * 3
+                            visible: vehicleCoordinator && vehicleCoordinator.enabled
+
+                            QGCLabel {
+                                text:   "Lost: " + (vehicleCoordinator ? vehicleCoordinator.dronesInCommsLoss : 0)
+                                color:  vehicleCoordinator && vehicleCoordinator.dronesInCommsLoss > 0 ? "#e74c3c" : "#2ecc71"
+                                font.pointSize: ScreenTools.smallFontPointSize
+                            }
+
+                            QGCLabel {
+                                text:   "Timeout: " + (vehicleCoordinator ? vehicleCoordinator.commsLossTimeoutSec + "s" : "N/A")
+                                color:  "#aaa"
+                                font.pointSize: ScreenTools.smallFontPointSize
+                            }
+
+                            QGCLabel {
+                                text:   "Failsafes: " + (vehicleCoordinator && vehicleCoordinator.allFailsafesVerified ? "OK" : "?")
+                                color:  vehicleCoordinator && vehicleCoordinator.allFailsafesVerified ? "#2ecc71" : "#f39c12"
+                                font.pointSize: ScreenTools.smallFontPointSize
+                            }
+                        }
+
+                        // Comms loss events list
+                        ListView {
+                            Layout.fillWidth: true
+                            height:           Math.min(contentHeight, ScreenTools.defaultFontPixelHeight * 6)
+                            clip:             true
+                            spacing:          _margin
+                            visible:          vehicleCoordinator && vehicleCoordinator.dronesInCommsLoss > 0
+                            model:            vehicleCoordinator ? vehicleCoordinator.commsLossEvents : null
+
+                            delegate: Rectangle {
+                                width:  ListView.view.width
+                                height: coordCommsCol.height + _margin * 2
+                                radius: _margin
+                                color:  Qt.rgba(0.9, 0.3, 0.24, 0.15)
+                                border.color: "#e74c3c"
+                                border.width: 1
+
+                                ColumnLayout {
+                                    id: coordCommsCol
+                                    anchors.left:   parent.left
+                                    anchors.right:  parent.right
+                                    anchors.verticalCenter: parent.verticalCenter
+                                    anchors.margins: _margin
+                                    spacing: 2
+
+                                    RowLayout {
+                                        spacing: _margin
+
+                                        Rectangle {
+                                            width:  coordCommsStateLabel.width + 8
+                                            height: coordCommsStateLabel.height + 4
+                                            radius: 3
+                                            color: {
+                                                switch (object.state) {
+                                                case 0: return "#e74c3c"
+                                                case 1: return "#c0392b"
+                                                case 2: return "#2ecc71"
+                                                case 3: return "#3498db"
+                                                default: return "#888"
+                                                }
+                                            }
+
+                                            QGCLabel {
+                                                id: coordCommsStateLabel
+                                                anchors.centerIn: parent
+                                                text: {
+                                                    switch (object.state) {
+                                                    case 0: return "LOST"
+                                                    case 1: return "RTL"
+                                                    case 2: return "RESTORED"
+                                                    case 3: return "REASSIGNED"
+                                                    default: return "?"
+                                                    }
+                                                }
+                                                color:  "white"
+                                                font.pointSize: ScreenTools.smallFontPointSize * 0.85
+                                                font.bold: true
+                                            }
+                                        }
+
+                                        QGCLabel {
+                                            text:   "V" + object.vehicleId + " (Zone " + object.zoneId + ")"
+                                            color:  qgcPal.text
+                                            font.pointSize: ScreenTools.smallFontPointSize
+                                            font.bold: true
+                                        }
+
+                                        QGCLabel {
+                                            text:   object.elapsedSec + "s"
+                                            color:  "#aaa"
+                                            font.pointSize: ScreenTools.smallFontPointSize
+                                            Layout.fillWidth: true
+                                            horizontalAlignment: Text.AlignRight
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // ── Action buttons ──
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing: _margin
+                            visible: vehicleCoordinator && vehicleCoordinator.enabled
+
+                            // Verify all failsafes
+                            Rectangle {
+                                Layout.fillWidth: true
+                                height:         coordVerifyLabel.height + ScreenTools.defaultFontPixelHeight * 0.5
+                                radius:         ScreenTools.defaultFontPixelHeight * 0.2
+                                color:          coordVerifyMa.containsMouse ? "#2980b9" : "#3498db"
+
+                                QGCLabel {
+                                    id:             coordVerifyLabel
+                                    anchors.centerIn: parent
+                                    text:           "Verify Failsafes"
+                                    color:          "white"
+                                    font.bold:      true
+                                    font.pointSize: ScreenTools.smallFontPointSize
+                                }
+                                MouseArea {
+                                    id:             coordVerifyMa
+                                    anchors.fill:   parent
+                                    hoverEnabled:   true
+                                    onClicked:      { if (vehicleCoordinator) vehicleCoordinator.verifyAllFailsafes() }
+                                }
+                            }
+
+                            // Check overlaps
+                            Rectangle {
+                                Layout.fillWidth: true
+                                height:         coordCheckLabel.height + ScreenTools.defaultFontPixelHeight * 0.5
+                                radius:         ScreenTools.defaultFontPixelHeight * 0.2
+                                color:          coordCheckMa.containsMouse ? "#7d3c98" : "#9b59b6"
+
+                                QGCLabel {
+                                    id:             coordCheckLabel
+                                    anchors.centerIn: parent
+                                    text:           "Check Overlaps"
+                                    color:          "white"
+                                    font.bold:      true
+                                    font.pointSize: ScreenTools.smallFontPointSize
+                                }
+                                MouseArea {
+                                    id:             coordCheckMa
+                                    anchors.fill:   parent
+                                    hoverEnabled:   true
+                                    onClicked:      { if (vehicleCoordinator) vehicleCoordinator.validateZoneOverlaps() }
+                                }
+                            }
+                        }
                     }
                 }
             }
