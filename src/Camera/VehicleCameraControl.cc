@@ -97,7 +97,7 @@ static bool read_value(QDomNode& element, const char* tagName, QString& target)
 }
 
 VehicleCameraControl::VehicleCameraControl(const mavlink_camera_information_t *info, Vehicle* vehicle, int compID, QObject* parent)
-    : MavlinkCameraControl(vehicle, parent)
+    : MavlinkCameraControlInterface(vehicle, parent)
     , _compID(compID)
 {
     QQmlEngine::setObjectOwnership(this, QQmlEngine::CppOwnership);
@@ -230,7 +230,7 @@ bool VehicleCameraControl::capturesPhotos() const
     return _mavlinkCameraInfo.flags & (CAMERA_CAP_FLAGS_CAPTURE_IMAGE | CAMERA_CAP_FLAGS_HAS_VIDEO_STREAM);
 }
 
-MavlinkCameraControl::CaptureVideoState VehicleCameraControl::captureVideoState() const
+MavlinkCameraControlInterface::CaptureVideoState VehicleCameraControl::captureVideoState() const
 {
     if (_videoCaptureStatus() == VIDEO_CAPTURE_STATUS_RUNNING || VideoManager::instance()->recording()) {
         return CaptureVideoStateCapturing;
@@ -246,7 +246,7 @@ MavlinkCameraControl::CaptureVideoState VehicleCameraControl::captureVideoState(
     return CaptureVideoStateDisabled;
 }
 
-MavlinkCameraControl::CapturePhotosState VehicleCameraControl::capturePhotosState() const
+MavlinkCameraControlInterface::CapturePhotosState VehicleCameraControl::capturePhotosState() const
 {
     if (_photoCaptureStatus() == PHOTO_CAPTURE_IN_PROGRESS) {
         return CapturePhotosStateCapturingSinglePhoto;
@@ -1693,11 +1693,11 @@ void VehicleCameraControl::handleTrackingImageStatus(const mavlink_camera_tracki
 
     _trackingImageStatus = trackingImageStatus;
 
-    if (_trackingImageStatus.tracking_status == 0 || !trackingEnabled()) {
+    if (_trackingImageStatus.tracking_status == CAMERA_TRACKING_STATUS_FLAGS_IDLE || !trackingEnabled()) {
         _trackingImageRect = {};
         qCDebug(CameraControlLog) << "Tracking off";
     } else {
-        if (_trackingImageStatus.tracking_mode == 2) {
+        if (_trackingImageStatus.tracking_mode == CAMERA_TRACKING_MODE_RECTANGLE) {
             _trackingImageRect = QRectF(QPointF(_trackingImageStatus.rec_top_x, _trackingImageStatus.rec_top_y),
                                         QPointF(_trackingImageStatus.rec_bottom_x, _trackingImageStatus.rec_bottom_y));
         } else {
@@ -2333,49 +2333,38 @@ void VehicleCameraControl::setTrackingEnabled(bool set)
 
 void VehicleCameraControl::startTracking(QRectF rec)
 {
-    if(_trackingMarquee != rec) {
-        _trackingMarquee = rec;
+    qCDebug(CameraControlLog) << "Start Tracking (Rectangle: ["
+                              << static_cast<float>(rec.x()) << ", "
+                              << static_cast<float>(rec.y()) << "] - ["
+                              << static_cast<float>(rec.x() + rec.width()) << ", "
+                              << static_cast<float>(rec.y() + rec.height()) << "]";
 
-        qCDebug(CameraControlLog) << "Start Tracking (Rectangle: ["
-                                  << static_cast<float>(rec.x()) << ", "
-                                  << static_cast<float>(rec.y()) << "] - ["
-                                  << static_cast<float>(rec.x() + rec.width()) << ", "
-                                  << static_cast<float>(rec.y() + rec.height()) << "]";
+    _vehicle->sendMavCommand(_compID,
+                             MAV_CMD_CAMERA_TRACK_RECTANGLE,
+                             true,
+                             static_cast<float>(rec.x()),
+                             static_cast<float>(rec.y()),
+                             static_cast<float>(rec.x() + rec.width()),
+                             static_cast<float>(rec.y() + rec.height()));
 
-        _vehicle->sendMavCommand(_compID,
-                                 MAV_CMD_CAMERA_TRACK_RECTANGLE,
-                                 true,
-                                 static_cast<float>(rec.x()),
-                                 static_cast<float>(rec.y()),
-                                 static_cast<float>(rec.x() + rec.width()),
-                                 static_cast<float>(rec.y() + rec.height()));
-
-        // Request tracking status
-        _requestTrackingStatus();
-    }
+    _requestTrackingStatus();
 }
 
 void VehicleCameraControl::startTracking(QPointF point, double radius)
 {
-    if(_trackingPoint != point || _trackingRadius != radius) {
-        _trackingPoint  = point;
-        _trackingRadius = radius;
+    qCDebug(CameraControlLog) << "Start Tracking (Point: ["
+                              << static_cast<float>(point.x()) << ", "
+                              << static_cast<float>(point.y()) << "], Radius:  "
+                              << static_cast<float>(radius);
 
-        qCDebug(CameraControlLog) << "Start Tracking (Point: ["
-                                  << static_cast<float>(point.x()) << ", "
-                                  << static_cast<float>(point.y()) << "], Radius:  "
-                                  << static_cast<float>(radius);
+    _vehicle->sendMavCommand(_compID,
+                             MAV_CMD_CAMERA_TRACK_POINT,
+                             true,
+                             static_cast<float>(point.x()),
+                             static_cast<float>(point.y()),
+                             static_cast<float>(radius));
 
-        _vehicle->sendMavCommand(_compID,
-                                 MAV_CMD_CAMERA_TRACK_POINT,
-                                 true,
-                                 static_cast<float>(point.x()),
-                                 static_cast<float>(point.y()),
-                                 static_cast<float>(radius));
-
-        // Request tracking status
-        _requestTrackingStatus();
-    }
+    _requestTrackingStatus();
 }
 
 void VehicleCameraControl::stopTracking()

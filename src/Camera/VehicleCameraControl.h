@@ -1,6 +1,6 @@
 #pragma once
 
-#include "MavlinkCameraControl.h"
+#include "MavlinkCameraControlInterface.h"
 #include "QmlObjectListModel.h"
 
 class QGCVideoStreamInfo;
@@ -35,7 +35,7 @@ public:
 };
 
 /// MAVLink Camera API controller - connected to a real mavlink v2 camera
-class VehicleCameraControl : public MavlinkCameraControl
+class VehicleCameraControl : public MavlinkCameraControlInterface
 {
 public:
     VehicleCameraControl(const mavlink_camera_information_t* info, Vehicle* vehicle, int compID, QObject* parent = nullptr);
@@ -294,9 +294,6 @@ protected:
     ThermalViewMode                     _thermalMode        = THERMAL_BLEND;
     double                              _thermalOpacity     = 85.0;
     TrackingStatus                      _trackingStatus     = TRACKING_UNKNOWN;
-    QRectF                              _trackingMarquee;
-    QPointF                             _trackingPoint;
-    double                              _trackingRadius     = 0.0;
     mavlink_camera_tracking_image_status_t  _trackingImageStatus;
     QRectF                                  _trackingImageRect;
 };
