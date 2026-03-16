@@ -3,6 +3,7 @@ import QtQuick.Layouts
 
 import QGroundControl
 import QGroundControl.Controls
+import "qrc:/custom/Sadron" as Sadron
 
 // Toast notification bar for SAR feedback — slides in at bottom-center
 Item {
@@ -29,15 +30,18 @@ Item {
         onTriggered: _visible = false
     }
 
-    Rectangle {
+    Sadron.SadronGlassPanel {
         id:                         toastRect
         anchors.horizontalCenter:   parent.horizontalCenter
         anchors.bottom:             parent.bottom
         anchors.bottomMargin:       ScreenTools.defaultFontPixelHeight * 4
         width:                      toastLayout.width + ScreenTools.defaultFontPixelWidth * 3
         height:                     toastLayout.height + ScreenTools.defaultFontPixelHeight * 0.8
-        radius:                     ScreenTools.defaultFontPixelHeight * 0.4
-        color:                      Qt.rgba(0, 0, 0, 0.85)
+        padding:                    ScreenTools.defaultFontPixelWidth * 1.5
+        radius:                     ScreenTools.defaultFontPixelHeight * 0.5
+        panelColor:                 QGroundControl.globalPalette.windowShadeDark
+        panelOpacity:               QGroundControl.globalPalette.globalTheme === QGCPalette.Light ? 0.92 : 0.88
+        borderColor:                Qt.rgba(1, 1, 1, 0.08)
         visible:                    false
         opacity:                    0
 
@@ -63,7 +67,6 @@ Item {
         ColumnLayout {
             id: toastLayout
             anchors.centerIn: parent
-            anchors.leftMargin: ScreenTools.defaultFontPixelWidth * 1.5
             spacing: 2
 
             Text {

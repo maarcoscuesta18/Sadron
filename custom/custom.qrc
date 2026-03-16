@@ -33,6 +33,7 @@
         <file alias="QGroundControl/FlyView/CustomGuidedActionsController.qml">src/CustomGuidedActionsController.qml</file>
     </qresource>
     <qresource prefix="/custom/Sadron">
+        <file alias="SadronGlassPanel.qml">res/Sadron/SadronGlassPanel.qml</file>
         <file alias="SARToolView.qml">res/Sadron/SARToolView.qml</file>
         <file alias="SARPanel.qml">res/Sadron/SARPanel.qml</file>
         <file alias="SARZoneMapVisuals.qml">res/Sadron/SARZoneMapVisuals.qml</file>

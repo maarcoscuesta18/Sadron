@@ -5,6 +5,7 @@
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
 #include <QtCore/QUrl>
+#include <QtCore/QUrlQuery>
 #include <QtNetwork/QNetworkAccessManager>
 #include <QtNetwork/QNetworkReply>
 #include <QtNetwork/QNetworkRequest>
@@ -14,6 +15,61 @@
 #include "Terrain/TerrainQuery.h"
 
 QGC_LOGGING_CATEGORY(EnvironmentalDataLog, "Sadron.EnvironmentalData")
+
+namespace {
+
+QString weatherCodeDescription(int code)
+{
+    switch (code) {
+    case 0:
+        return QStringLiteral("Clear sky");
+    case 1:
+        return QStringLiteral("Mainly clear");
+    case 2:
+        return QStringLiteral("Partly cloudy");
+    case 3:
+        return QStringLiteral("Overcast");
+    case 45:
+    case 48:
+        return QStringLiteral("Fog");
+    case 51:
+    case 53:
+    case 55:
+        return QStringLiteral("Drizzle");
+    case 56:
+    case 57:
+        return QStringLiteral("Freezing drizzle");
+    case 61:
+    case 63:
+    case 65:
+        return QStringLiteral("Rain");
+    case 66:
+    case 67:
+        return QStringLiteral("Freezing rain");
+    case 71:
+    case 73:
+    case 75:
+        return QStringLiteral("Snow fall");
+    case 77:
+        return QStringLiteral("Snow grains");
+    case 80:
+    case 81:
+    case 82:
+        return QStringLiteral("Rain showers");
+    case 85:
+    case 86:
+        return QStringLiteral("Snow showers");
+    case 95:
+        return QStringLiteral("Thunderstorm");
+    case 96:
+    case 99:
+        return QStringLiteral("Thunderstorm with hail");
+    default:
+        return QStringLiteral("Unknown conditions");
+    }
+}
+
+} // namespace
 
 /*===========================================================================*/
 
@@ -33,19 +89,6 @@ EnvironmentalDataProvider::~EnvironmentalDataProvider()
     _refreshTimer->stop();
 }
 
-/*===========================================================================*/
-/*  API key management                                                        */
-/*===========================================================================*/
-
-void EnvironmentalDataProvider::setApiKey(const QString &key)
-{
-    if (_apiKey != key) {
-        _apiKey = key;
-        emit apiKeyChanged();
-        qCDebug(EnvironmentalDataLog) << "API key updated";
-    }
-}
-
 void EnvironmentalDataProvider::setWeatherRefreshSecs(int secs)
 {
     secs = qBound(60, secs, 3600);
@@ -56,37 +99,27 @@ void EnvironmentalDataProvider::setWeatherRefreshSecs(int secs)
     }
 }
 
-QString EnvironmentalDataProvider::precipTileUrlTemplate() const
-{
-    if (_apiKey.isEmpty()) {
-        return QString();
-    }
-    // OpenWeatherMap precipitation tile layer
-    return QStringLiteral("https://tile.openweathermap.org/map/precipitation_new/{z}/{x}/{y}.png?appid=%1").arg(_apiKey);
-}
-
 /*===========================================================================*/
 /*  Weather: fetch current conditions for a point                             */
 /*===========================================================================*/
 
 void EnvironmentalDataProvider::fetchWeather(double lat, double lon)
 {
-    if (_apiKey.isEmpty()) {
-        emit errorOccurred(QStringLiteral("Weather"), QStringLiteral("No API key configured. Set an OpenWeatherMap API key."));
-        return;
-    }
-
     _weatherLoading = true;
     emit weatherLoadingChanged();
 
     _lastLat = lat;
     _lastLon = lon;
 
-    const QString url = QStringLiteral(
-        "https://api.openweathermap.org/data/2.5/weather?lat=%1&lon=%2&appid=%3&units=metric"
-    ).arg(lat, 0, 'f', 6).arg(lon, 0, 'f', 6).arg(_apiKey);
+    QUrl requestUrl(QStringLiteral("https://api.open-meteo.com/v1/forecast"));
+    QUrlQuery query;
+    query.addQueryItem(QStringLiteral("latitude"), QString::number(lat, 'f', 6));
+    query.addQueryItem(QStringLiteral("longitude"), QString::number(lon, 'f', 6));
+    query.addQueryItem(QStringLiteral("current"), QStringLiteral("temperature_2m,relative_humidity_2m,precipitation,weather_code,cloud_cover,visibility,wind_speed_10m,wind_direction_10m,wind_gusts_10m"));
+    query.addQueryItem(QStringLiteral("wind_speed_unit"), QStringLiteral("ms"));
+    query.addQueryItem(QStringLiteral("timezone"), QStringLiteral("auto"));
+    requestUrl.setQuery(query);
 
-    const QUrl requestUrl(url);
     QNetworkRequest request(requestUrl);
     request.setHeader(QNetworkRequest::UserAgentHeader, QStringLiteral("Sadron-SAR/1.0"));
 
@@ -140,34 +173,24 @@ void EnvironmentalDataProvider::_parseWeatherResponse(const QByteArray &data)
 
     const QJsonObject root = doc.object();
 
-    // Wind data
-    const QJsonObject wind = root.value(QStringLiteral("wind")).toObject();
-    _windSpeed     = wind.value(QStringLiteral("speed")).toDouble(0.0);
-    _windDirection = wind.value(QStringLiteral("deg")).toDouble(0.0);
-    _windGust      = wind.value(QStringLiteral("gust")).toDouble(0.0);
-
-    // Main data
-    const QJsonObject main = root.value(QStringLiteral("main")).toObject();
-    _temperature = main.value(QStringLiteral("temp")).toDouble(0.0);
-    _humidity    = main.value(QStringLiteral("humidity")).toInt(0);
-    _visibility  = root.value(QStringLiteral("visibility")).toDouble(10000.0);
-
-    // Clouds
-    const QJsonObject clouds = root.value(QStringLiteral("clouds")).toObject();
-    _cloudCover = clouds.value(QStringLiteral("all")).toInt(0);
-
-    // Precipitation (rain in last 1h or 3h)
-    const QJsonObject rain = root.value(QStringLiteral("rain")).toObject();
-    _precipitation = rain.value(QStringLiteral("1h")).toDouble(
-                         rain.value(QStringLiteral("3h")).toDouble(0.0));
-
-    // Weather description
-    const QJsonArray weatherArr = root.value(QStringLiteral("weather")).toArray();
-    if (!weatherArr.isEmpty()) {
-        const QJsonObject w = weatherArr.first().toObject();
-        _weatherDescription = w.value(QStringLiteral("description")).toString();
-        _weatherIcon = w.value(QStringLiteral("icon")).toString();
+    const QJsonObject current = root.value(QStringLiteral("current")).toObject();
+    if (current.isEmpty()) {
+        emit errorOccurred(QStringLiteral("Weather"), QStringLiteral("Weather response missing current conditions"));
+        return;
     }
+
+    _windSpeed = current.value(QStringLiteral("wind_speed_10m")).toDouble(0.0);
+    _windDirection = current.value(QStringLiteral("wind_direction_10m")).toDouble(0.0);
+    _windGust = current.value(QStringLiteral("wind_gusts_10m")).toDouble(0.0);
+    _temperature = current.value(QStringLiteral("temperature_2m")).toDouble(0.0);
+    _humidity = current.value(QStringLiteral("relative_humidity_2m")).toInt(0);
+    _visibility = current.value(QStringLiteral("visibility")).toDouble(10000.0);
+    _cloudCover = current.value(QStringLiteral("cloud_cover")).toInt(0);
+    _precipitation = current.value(QStringLiteral("precipitation")).toDouble(0.0);
+
+    const int weatherCode = current.value(QStringLiteral("weather_code")).toInt(-1);
+    _weatherDescription = weatherCodeDescription(weatherCode);
+    _weatherIcon.clear();
 
     _weatherAvailable = true;
 
@@ -183,9 +206,7 @@ void EnvironmentalDataProvider::_parseWeatherResponse(const QByteArray &data)
 
 void EnvironmentalDataProvider::_generateWindVectorGrid(double swLat, double swLon, double neLat, double neLon)
 {
-    if (_apiKey.isEmpty()) return;
-
-    // Use OpenWeatherMap's box/city endpoint to get weather data for a grid of points
+    // Use current point weather to generate a synthetic grid over the area.
     // Alternatively, generate a uniform grid using current point weather as base
     // For now, we generate a grid with slight random variation from the point weather
     // Once point weather is available, the grid is populated in _parseWindGridResponse

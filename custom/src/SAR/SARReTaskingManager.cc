@@ -290,9 +290,13 @@ void SARReTaskingManager::completeReTask(int vehicleId)
         }
     }
 
-    // Regenerate the transect for the zone so the drone can continue
+    // Regenerate and redeploy the original zone mission so the drone can continue.
     if (_missionMgr && originalZoneId >= 0) {
         _missionMgr->generateZoneTransect(originalZoneId);
+        if (!_missionMgr->deployZoneMission(originalZoneId)) {
+            qCWarning(SARReTaskingManagerLog) << "Failed to redeploy zone mission for zone" << originalZoneId
+                                             << "after re-task completion";
+        }
     }
 
     qCDebug(SARReTaskingManagerLog) << "Re-task completed: vehicle" << vehicleId
@@ -329,6 +333,14 @@ void SARReTaskingManager::abandonReTask(int vehicleId)
         if (zone && zone->status() == SARZone::Investigating) {
             zone->setStatus(SARZone::Active);
             qCDebug(SARReTaskingManagerLog) << "Zone" << originalZoneId << "restored to Active (re-task abandoned)";
+        }
+    }
+
+    if (_missionMgr && originalZoneId >= 0) {
+        _missionMgr->generateZoneTransect(originalZoneId);
+        if (!_missionMgr->deployZoneMission(originalZoneId)) {
+            qCWarning(SARReTaskingManagerLog) << "Failed to redeploy zone mission for zone" << originalZoneId
+                                             << "after re-task abandonment";
         }
     }
 
@@ -405,6 +417,17 @@ void SARReTaskingManager::_activateReTask(ReTaskEntry *entry)
         if (target && target->status() == SARTarget::Unconfirmed) {
             target->setStatus(SARTarget::Investigating);
         }
+    }
+
+    Vehicle *vehicle = MultiVehicleManager::instance()->getVehicleById(vehicleId);
+    if (vehicle) {
+        vehicle->pauseVehicle();
+        vehicle->guidedModeGotoLocation(entry->targetCoord());
+        qCDebug(SARReTaskingManagerLog) << "Redirected vehicle" << vehicleId
+                                        << "to target" << targetId << "at" << entry->targetCoord();
+    } else {
+        qCWarning(SARReTaskingManagerLog) << "Unable to redirect vehicle" << vehicleId
+                                          << "for re-task to target" << targetId;
     }
 
     // Move entry from pending → active

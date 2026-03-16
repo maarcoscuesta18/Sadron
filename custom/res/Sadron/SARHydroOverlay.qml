@@ -137,8 +137,13 @@ Item {
                     return QtPositioning.coordinate(sumLat / coords.length, sumLon / coords.length)
                 }
 
-                property var labelPos: centerCoord && mapControl
-                    ? mapControl.fromCoordinate(centerCoord, false) : Qt.point(0, 0)
+                // Reference center + zoomLevel so QML re-evaluates on pan/zoom
+                property var labelPos: {
+                    if (!centerCoord || !mapControl) return Qt.point(0, 0)
+                    var _c = mapControl.center
+                    var _z = mapControl.zoomLevel
+                    return mapControl.fromCoordinate(centerCoord, false)
+                }
 
                 x: labelPos.x - labelBg.width / 2
                 y: labelPos.y - labelBg.height / 2
@@ -236,8 +241,13 @@ Item {
                     return QtPositioning.coordinate(coords[midIdx].latitude, coords[midIdx].longitude)
                 }
 
-                property var labelPos: midCoord && mapControl
-                    ? mapControl.fromCoordinate(midCoord, false) : Qt.point(0, 0)
+                // Reference center + zoomLevel so QML re-evaluates on pan/zoom
+                property var labelPos: {
+                    if (!midCoord || !mapControl) return Qt.point(0, 0)
+                    var _c = mapControl.center
+                    var _z = mapControl.zoomLevel
+                    return mapControl.fromCoordinate(midCoord, false)
+                }
 
                 x: labelPos.x - wayLabelBg.width / 2
                 y: labelPos.y - wayLabelBg.height - 4

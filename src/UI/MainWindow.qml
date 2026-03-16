@@ -10,6 +10,7 @@ import QGroundControl.FactControls
 import QGroundControl.FlyView
 import QGroundControl.FlightMap
 import QGroundControl.Toolbar
+import "qrc:/custom/Sadron" as Sadron
 
 /// @brief Native QML top level window
 /// All properties defined here are visible to all QML pages.
@@ -342,13 +343,18 @@ ApplicationWindow {
             anchors.fill: parent
         }
 
-        Rectangle {
+        Sadron.SadronGlassPanel {
             id:             toolDrawerToolbar
             anchors.left:   parent.left
             anchors.right:  parent.right
             anchors.top:    parent.top
             height:         ScreenTools.toolbarHeight
-            color:          qgcPal.toolbarBackground
+            padding:        0
+            radius:         0
+            elevated:       false
+            panelColor:     qgcPal.windowShadeDark
+            panelOpacity:   qgcPal.globalTheme === QGCPalette.Light ? 0.88 : 0.78
+            borderWidth:    0
 
             RowLayout {
                 id:                 toolDrawerToolbarLayout
@@ -417,19 +423,23 @@ ApplicationWindow {
         property alias  criticalVehicleMessage:             criticalVehicleMessageText.text
         property bool   additionalCriticalMessagesReceived: false
 
-        background: Rectangle {
-            anchors.fill:   parent
-            color:          qgcPal.alertBackground
-            radius:         ScreenTools.defaultFontPixelHeight * 0.5
-            border.color:   qgcPal.alertBorder
-            border.width:   2
+        background: Item {
+            Sadron.SadronGlassPanel {
+                anchors.fill:   parent
+                padding:        0
+                radius:         ScreenTools.defaultFontPixelHeight * 0.5
+                panelColor:     qgcPal.alertBackground
+                panelOpacity:   qgcPal.globalTheme === QGCPalette.Light ? 0.96 : 0.92
+                borderColor:    qgcPal.alertBorder
+                borderWidth:    1
+            }
 
             Rectangle {
                 anchors.horizontalCenter:   parent.horizontalCenter
                 anchors.top:                parent.top
                 anchors.topMargin:          -(height / 2)
-                color:                      qgcPal.alertBackground
-                radius:                     ScreenTools.defaultFontPixelHeight * 0.25
+                color:                      Qt.rgba(qgcPal.alertBackground.r, qgcPal.alertBackground.g, qgcPal.alertBackground.b, 0.96)
+                radius:                     ScreenTools.defaultFontPixelHeight * 0.35
                 border.color:               qgcPal.alertBorder
                 border.width:               1
                 width:                      vehicleWarningLabel.contentWidth + _margins
@@ -451,8 +461,8 @@ ApplicationWindow {
                 anchors.horizontalCenter:   parent.horizontalCenter
                 anchors.bottom:             parent.bottom
                 anchors.bottomMargin:       -(height / 2)
-                color:                      qgcPal.alertBackground
-                radius:                     ScreenTools.defaultFontPixelHeight * 0.25
+                color:                      Qt.rgba(qgcPal.alertBackground.r, qgcPal.alertBackground.g, qgcPal.alertBackground.b, 0.96)
+                radius:                     ScreenTools.defaultFontPixelHeight * 0.35
                 border.color:               qgcPal.alertBorder
                 border.width:               1
                 width:                      additionalErrorsLabel.contentWidth + _margins
@@ -547,12 +557,14 @@ ApplicationWindow {
         }
 
         background: Item {
-            Rectangle {
+            Sadron.SadronGlassPanel {
                 id:             backgroundRect
                 anchors.fill:   parent
-                color:          QGroundControl.globalPalette.window
-                radius:         indicatorDrawer._margins
-                opacity:        0.85
+                padding:        0
+                radius:         ScreenTools.defaultFontPixelHeight * 0.5
+                panelColor:     QGroundControl.globalPalette.windowShadeDark
+                panelOpacity:   QGroundControl.globalPalette.globalTheme === QGCPalette.Light ? 0.94 : 0.88
+                borderColor:    Qt.rgba(1, 1, 1, 0.08)
             }
 
             Rectangle {
@@ -561,14 +573,14 @@ ApplicationWindow {
                 width:                      ScreenTools.largeFontPixelHeight
                 height:                     width
                 radius:                     width / 2
-                color:                      QGroundControl.globalPalette.button
-                border.color:               QGroundControl.globalPalette.buttonText
+                color:                      Qt.rgba(0.23, 0.51, 0.96, 0.9)
+                border.width:               0
                 visible:                    indicatorDrawerLoader.item && indicatorDrawerLoader.item._showExpand && !indicatorDrawer._expanded
 
                 QGCLabel {
                     anchors.centerIn:   parent
                     text:               ">"
-                    color:              QGroundControl.globalPalette.buttonText
+                    color:              "white"
                 }
 
                 QGCMouseArea {

@@ -306,12 +306,14 @@ private:
     double _horizontalDistance(const QGeoCoordinate &a, const QGeoCoordinate &b) const;
     double _verticalDistance(const QGeoCoordinate &a, const QGeoCoordinate &b) const;
     void _commandAltitudeAdjust(int vehicleId, double deltaAltM);
+    void _restoreAltitudeAdjust(int vehicleId);
     ProximityConflict *_findConflict(int idA, int idB) const;
 
     // ── Loss of comms internals ──
     void _checkCommsStatus();
     void _handleCommsLoss(int vehicleId);
     void _handleCommsRestored(int vehicleId);
+    void _removeCommsLossEvent(int vehicleId);
     CommsLossEvent *_findCommsLossEvent(int vehicleId) const;
     int _findBestReassignmentTarget(int excludeVehicleId, const QGeoCoordinate &zoneCenter) const;
 

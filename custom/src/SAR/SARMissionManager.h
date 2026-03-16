@@ -39,9 +39,10 @@ class SARMissionManager : public QObject
     Q_PROPERTY(bool             showFlightPaths READ showFlightPaths WRITE setShowFlightPaths NOTIFY showFlightPathsChanged)
 
     // Abort state properties
-    Q_PROPERTY(bool             abortInProgress READ abortInProgress NOTIFY abortProgressChanged)
-    Q_PROPERTY(AbortPhase       abortPhase      READ abortPhase      NOTIFY abortProgressChanged)
-    Q_PROPERTY(QString          abortStatusText READ abortStatusText NOTIFY abortProgressChanged)
+    Q_PROPERTY(bool             abortInProgress              READ abortInProgress              NOTIFY abortProgressChanged)
+    Q_PROPERTY(AbortPhase       abortPhase                   READ abortPhase                   NOTIFY abortProgressChanged)
+    Q_PROPERTY(QString          abortStatusText              READ abortStatusText              NOTIFY abortProgressChanged)
+    Q_PROPERTY(bool             suppressMissionCompleteDialog READ suppressMissionCompleteDialog NOTIFY suppressMissionCompleteDialogChanged)
 
     // Drone readiness properties
     Q_PROPERTY(int     connectedVehicleCount READ connectedVehicleCount NOTIFY readinessChanged)
@@ -93,6 +94,7 @@ public:
     bool abortInProgress() const { return _abortPhase != AbortIdle; }
     AbortPhase abortPhase() const { return _abortPhase; }
     QString abortStatusText() const;
+    bool suppressMissionCompleteDialog() const { return _suppressMissionCompleteDialog; }
 
     // Manager injection (called after construction when all subsystems exist)
     void setTargetManager(SARTargetManager *mgr);
@@ -130,12 +132,16 @@ public:
     Q_INVOKABLE QVariantList generateZoneTransect(int zoneId);
     Q_INVOKABLE void generateAllTransects();
     Q_INVOKABLE void clearAllTransects();
+    bool deployZoneMission(int zoneId);
 
     // Auto-assign zones to available vehicles
     Q_INVOKABLE void autoAssignZones();
 
     // Handle vehicle RTL (redistribute its remaining zone)
     Q_INVOKABLE void handleVehicleRTL(int vehicleId);
+
+    // Remove missions from all connected vehicles
+    Q_INVOKABLE void clearAllVehicleMissions();
 
 signals:
     void patternChanged();
@@ -155,6 +161,8 @@ signals:
     // Abort signals
     void abortProgressChanged();
     void abortCompleted();
+    void suppressMissionCompleteDialogChanged();
+    void recoveryMissionClearPrompt();
 
     // Deployment signals
     void missionUploadProgress(int vehicleId, double pct);
@@ -165,8 +173,8 @@ signals:
 private:
     QVariantList _generateParallelTrack(const QVariantList &polygon, double spacing, double altitude) const;
     QVariantList _generateCreepingLine(const QVariantList &polygon, double spacing, double altitude) const;
-    QVariantList _generateExpandingSquare(const QGeoCoordinate &center, double sideLength, double spacing, double altitude) const;
-    QVariantList _generateSectorSearch(const QVariantList &polygon, double altitude) const;
+    QVariantList _generateExpandingSquare(const QVariantList &polygon, const QGeoCoordinate &center, double maxRadius, double spacing, double altitude) const;
+    QVariantList _generateSectorSearch(const QVariantList &polygon, double spacing, double altitude) const;
 
     void _onSearchParamsChanged();
     void _onVehicleAdded(Vehicle *vehicle);
@@ -174,7 +182,7 @@ private:
     void _updateReadiness();
 
     // Mission upload helpers
-    void _uploadMissionToVehicle(Vehicle *vehicle, SARZone *zone);
+    void _uploadMissionToVehicle(Vehicle *vehicle, const QList<SARZone *> &zones);
     void _onUploadComplete(bool error);
     void _startAllUploadedVehicles();
     void _configureRCLossExemption(Vehicle *v);
@@ -218,6 +226,7 @@ private:
 
     // Mission upload tracking: vehicleId → upload completed
     QHash<int, bool>    _pendingUploads;
+    QHash<PlanManager *, int> _pendingUploadManagers;
     int                 _uploadSuccessCount = 0;
     int                 _uploadFailCount = 0;
 
@@ -225,6 +234,7 @@ private:
     AbortPhase          _abortPhase = AbortIdle;
     QSet<int>           _abortPendingVehicles;
     QTimer             *_abortSafetyTimer = nullptr;
+    bool                _suppressMissionCompleteDialog = false;
 
     // Recovery (normal completion) land & disarm tracking
     QSet<int>           _recoveryPendingVehicles;

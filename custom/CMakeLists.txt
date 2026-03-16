@@ -107,6 +107,8 @@ set(CUSTOM_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/SAR/SARReTaskingManager.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/SAR/VehicleCoordinator.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/SAR/VehicleCoordinator.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/SAR/SARModeManager.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/SAR/SARModeManager.h
     # Mesh networking
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Mesh/MeshNetworkManager.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Mesh/MeshNetworkManager.h

@@ -112,7 +112,7 @@ Item {
     property real implicitComboBoxWidth:            implicitButtonWidth
     property real comboBoxPadding:                  defaultFontPixelWidth
     property real implicitSliderHeight:             defaultFontPixelHeight
-    property real defaultBorderRadius:              defaultFontPixelWidth / 2
+    property real defaultBorderRadius:              defaultFontPixelWidth
 
     // It's not possible to centralize an even number of pixels, checkBoxIndicatorSize should be an odd number to allow centralization
     property real checkBoxIndicatorSize:            2 * Math.floor(defaultFontPixelHeight / 2) + 1

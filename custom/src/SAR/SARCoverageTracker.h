@@ -57,7 +57,7 @@ public:
     // Process MAVLink position messages to auto-track coverage
     void processMavlinkMessage(Vehicle *vehicle, const mavlink_message_t &message);
 
-    // Get coverage data for a specific zone polygon
+    // Get normalized coverage ratio for a specific zone polygon (0.0 - 1.0)
     Q_INVOKABLE double coverageForZone(const QVariantList &zonePolygon) const;
 
 signals:
@@ -80,7 +80,9 @@ private:
 
     // Set of covered cell coordinates (gridX, gridY)
     QSet<QPair<int, int>> _coveredCells;
+    QSet<QPair<int, int>> _searchAreaCells;
 
     // Track last known position per vehicle to avoid redundant updates
     QHash<int, QGeoCoordinate> _lastVehiclePositions;
+    mutable QHash<QString, QVector<QPair<int, int>>> _zoneCellCache;
 };

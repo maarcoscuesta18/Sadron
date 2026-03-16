@@ -4,9 +4,10 @@ import QtQuick.Layouts
 
 import QGroundControl
 import QGroundControl.Controls
+import "qrc:/custom/Sadron" as Sadron
 
 // Left-side SAR panel: zone drawing, fleet list, target list, operation actions
-Rectangle {
+Sadron.SadronGlassPanel {
     id: _root
 
     property var  mapControl
@@ -18,19 +19,27 @@ Rectangle {
     property bool showSlopeOverlay:   false
     property bool showHydroOverlay:   false
 
+    // Guard: true while applyMode() is syncing values — prevents markCustomized() calls
+    property bool _applyingMode: false
+
     width:  ScreenTools.defaultFontPixelWidth * 32
     height: parent ? parent.height : 400
-    color:  qgcPal.window
-    radius: ScreenTools.defaultFontPixelHeight * 0.25
+    padding: 0
+    radius: ScreenTools.defaultFontPixelHeight * 0.5
+    panelColor: qgcPal.windowShadeDark
+    panelOpacity: qgcPal.globalTheme === QGCPalette.Light ? 0.94 : 0.86
+    borderColor: Qt.rgba(1, 1, 1, 0.08)
 
     property real _margin:          ScreenTools.defaultFontPixelWidth * 0.75
-    property real _sectionSpacing:  ScreenTools.defaultFontPixelHeight * 0.5
+    property real _sectionSpacing:  ScreenTools.defaultFontPixelHeight * 0.65
     property var  _activeVehicle:   QGroundControl.multiVehicleManager.activeVehicle
     property var  _vehicles:        QGroundControl.multiVehicleManager.vehicles
+    property color _uiAccentBlue:   qgcPal.brandingPurple
+    property color _cardBorderColor: Qt.rgba(1, 1, 1, 0.06)
+    property color _cardFillColor:  Qt.rgba(qgcPal.windowShade.r, qgcPal.windowShade.g, qgcPal.windowShade.b, qgcPal.globalTheme === QGCPalette.Light ? 0.96 : 0.90)
 
     // Readiness convenience properties
     property bool _hasConnectedVehicles: sarMissionManager ? sarMissionManager.hasConnectedVehicles : false
-    property bool _canStartMission:      sarMissionManager ? sarMissionManager.canStartMission : false
 
     QGCPalette { id: qgcPal; colorGroupEnabled: true }
 
@@ -46,83 +55,17 @@ Rectangle {
             width:  parent.width
             spacing: _sectionSpacing
 
-            // ── Header: Phase + Coverage + Targets ──
-            Rectangle {
-                Layout.fillWidth:   true
-                implicitHeight:     headerCol.height + _margin * 2
-                radius:             _margin
-                color:              Qt.rgba(0.9, 0.5, 0.13, 0.15)
-
-                ColumnLayout {
-                    id: headerCol
-                    anchors.left:       parent.left
-                    anchors.right:      parent.right
-                    anchors.top:        parent.top
-                    anchors.margins:    _margin
-                    spacing:            2
-
-                    RowLayout {
-                        Layout.fillWidth: true
-
-                        QGCLabel {
-                            text:       "SAR OPERATION"
-                            color:      "#e67e22"
-                            font.bold:  true
-                            font.pointSize: ScreenTools.mediumFontPointSize
-                            Layout.fillWidth: true
-                        }
-                    }
-
-                    RowLayout {
-                        Layout.fillWidth: true
-
-                        QGCLabel {
-                            text: sarMissionManager ? {
-                                0: "PLANNING",
-                                1: "BRIEFING",
-                                2: "DEPLOYING",
-                                3: "SEARCHING",
-                                4: "INVESTIGATING",
-                                5: "RECOVERY",
-                                6: "DEBRIEFING"
-                            }[sarMissionManager.phase] || "UNKNOWN" : "OFFLINE"
-                            color: sarMissionManager && sarMissionManager.phase === 3 ? "#2ecc71" :
-                                   sarMissionManager && sarMissionManager.phase === 4 ? "#f39c12" :
-                                   sarMissionManager && sarMissionManager.phase === 5 ? "#e74c3c" : qgcPal.text
-                            font.bold: true
-                        }
-                    }
-
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: _margin * 3
-
-                        QGCLabel {
-                            text:   "Coverage: " + (sarCoverageTracker ? sarCoverageTracker.coveragePercent.toFixed(1) + "%" : "N/A")
-                            color:  "#2ecc71"
-                            font.pointSize: ScreenTools.smallFontPointSize
-                        }
-
-                        QGCLabel {
-                            text:   "Targets: " + (sarTargetManager ? sarTargetManager.totalTargets : "0")
-                            color:  sarTargetManager && sarTargetManager.totalTargets > 0 ? "#f39c12" : qgcPal.text
-                            font.pointSize: ScreenTools.smallFontPointSize
-                        }
-
-                        QGCLabel {
-                            text:   "Zones: " + (sarZoneManager ? sarZoneManager.totalZones : "0")
-                            color:  qgcPal.text
-                            font.pointSize: ScreenTools.smallFontPointSize
-                        }
-
-                        QGCLabel {
-                            property int _armed:     sarMissionManager ? sarMissionManager.armedVehicleCount : 0
-                            property int _connected: sarMissionManager ? sarMissionManager.connectedVehicleCount : 0
-                            text:   _armed + "/" + _connected + " armed"
-                            color:  _connected === 0 ? "#e74c3c" : _armed === 0 ? "#f39c12" : "#2ecc71"
-                            font.pointSize: ScreenTools.smallFontPointSize
-                        }
-                    }
+            // ── Connections: sync sidebar SpinBoxes when disaster mode is applied ──
+            Connections {
+                target: sarModeManager
+                function onModeApplied(mode) {
+                    _root._applyingMode = true
+                    patternCombo.currentIndex = sarMissionManager ? sarMissionManager.currentPattern : 0
+                    altitudeSpin.value        = sarMissionManager ? sarMissionManager.searchAltitude : 30
+                    speedSpin.value           = sarMissionManager ? sarMissionManager.searchSpeed : 5
+                    spacingSpin.value         = sarMissionManager ? sarMissionManager.trackSpacing : 20
+                    strategyCombo.currentIndex = sarModeManager.recommendedPartitionStrategy === 2 ? 1 : 0
+                    _root._applyingMode = false
                 }
             }
 
@@ -131,7 +74,9 @@ Rectangle {
                 Layout.fillWidth:   true
                 implicitHeight:     zoneDrawCol.height + _margin * 2
                 radius:             _margin
-                color:              qgcPal.windowShade
+                color:              _cardFillColor
+                border.width:       1
+                border.color:       _cardBorderColor
 
                 ColumnLayout {
                     id: zoneDrawCol
@@ -144,7 +89,7 @@ Rectangle {
                     QGCLabel {
                         text:       "Search Area"
                         font.bold:  true
-                        color:      "#e67e22"
+                        color:      _uiAccentBlue
                     }
 
                     // Search area edit / clear buttons
@@ -236,6 +181,7 @@ Rectangle {
                             onCurrentIndexChanged: {
                                 if (sarMissionManager) {
                                     sarMissionManager.currentPattern = currentIndex
+                                    if (!_root._applyingMode && sarModeManager) sarModeManager.markCustomized()
                                     // Auto-regenerate transects when pattern changes so drones follow the new pattern
                                     if (sarZoneManager && sarZoneManager.totalZones > 0) {
                                         sarMissionManager.generateAllTransects()
@@ -254,6 +200,7 @@ Rectangle {
                             onValueModified: {
                                 if (sarMissionManager) {
                                     sarMissionManager.searchAltitude = value
+                                    if (!_root._applyingMode && sarModeManager) sarModeManager.markCustomized()
                                     if (sarZoneManager && sarZoneManager.totalZones > 0) {
                                         sarMissionManager.generateAllTransects()
                                     }
@@ -267,15 +214,25 @@ Rectangle {
                             from:   1
                             to:     15
                             value:  sarMissionManager ? sarMissionManager.searchSpeed : 5
+                            enabled: !(sarMissionManager && sarMissionManager.missionActive)
                             Layout.fillWidth: true
                             onValueModified: {
                                 if (sarMissionManager) {
                                     sarMissionManager.searchSpeed = value
-                                    if (sarZoneManager && sarZoneManager.totalZones > 0) {
+                                    if (!_root._applyingMode && sarModeManager) sarModeManager.markCustomized()
+                                    if (!sarMissionManager.missionActive && sarZoneManager && sarZoneManager.totalZones > 0) {
                                         sarMissionManager.generateAllTransects()
                                     }
                                 }
                             }
+                        }
+
+                        QGCLabel {
+                            visible: sarMissionManager && sarMissionManager.missionActive
+                            text:    qsTr("Pause or finish the mission before changing speed.")
+                            color:   "#f39c12"
+                            font.italic: true
+                            font.pointSize: ScreenTools.smallFontPointSize
                         }
 
                         QGCLabel { text: qsTr("Spacing (m):") }
@@ -288,6 +245,7 @@ Rectangle {
                             onValueModified: {
                                 if (sarMissionManager) {
                                     sarMissionManager.trackSpacing = value
+                                    if (!_root._applyingMode && sarModeManager) sarModeManager.markCustomized()
                                     if (sarZoneManager && sarZoneManager.totalZones > 0) {
                                         sarMissionManager.generateAllTransects()
                                     }
@@ -366,7 +324,9 @@ Rectangle {
                 Layout.fillWidth:   true
                 implicitHeight:     zoneListCol.height + _margin * 2
                 radius:             _margin
-                color:              qgcPal.windowShade
+                color:              _cardFillColor
+                border.width:       1
+                border.color:       _cardBorderColor
                 visible:            sarZoneManager && sarZoneManager.totalZones > 0
 
                 ColumnLayout {
@@ -380,7 +340,7 @@ Rectangle {
                     QGCLabel {
                         text:       qsTr("Zones (%1)").arg(sarZoneManager ? sarZoneManager.totalZones : 0)
                         font.bold:  true
-                        color:      "#e67e22"
+                        color:      _uiAccentBlue
                     }
 
                     Repeater {
@@ -390,9 +350,18 @@ Rectangle {
                             Layout.fillWidth: true
                             implicitHeight: zoneCardCol.height + _margin * 2
                             radius:         _margin * 0.5
-                            color:          Qt.rgba(object.displayColor.r, object.displayColor.g, object.displayColor.b, object.selected ? 0.25 : 0.15)
-                            border.color:   object.selected ? "white" : object.displayColor
-                            border.width:   object.selected ? 2 : 1
+                            color:          object.selected ? Qt.rgba(_uiAccentBlue.r, _uiAccentBlue.g, _uiAccentBlue.b, 0.16) : Qt.rgba(1, 1, 1, 0.04)
+                            border.color:   object.selected ? _uiAccentBlue : _cardBorderColor
+                            border.width:   1
+
+                            Rectangle {
+                                anchors.left:   parent.left
+                                anchors.top:    parent.top
+                                anchors.bottom: parent.bottom
+                                width:          ScreenTools.defaultFontPixelWidth * 0.4
+                                radius:         parent.radius
+                                color:          object.selected ? _uiAccentBlue : Qt.rgba(object.displayColor.r, object.displayColor.g, object.displayColor.b, 0.55)
+                            }
 
                             ColumnLayout {
                                 id: zoneCardCol
@@ -449,7 +418,9 @@ Rectangle {
                             }
 
                             MouseArea {
+                                id: zoneCardMouseArea
                                 anchors.fill: parent
+                                hoverEnabled: true
                                 onClicked: {
                                     // Select zone and center map on it
                                     if (sarZoneManager) {
@@ -470,7 +441,9 @@ Rectangle {
                 Layout.fillWidth:   true
                 implicitHeight:     fleetCol.height + _margin * 2
                 radius:             _margin
-                color:              qgcPal.windowShade
+                color:              _cardFillColor
+                border.width:       1
+                border.color:       _cardBorderColor
 
                 ColumnLayout {
                     id: fleetCol
@@ -483,7 +456,7 @@ Rectangle {
                     QGCLabel {
                         text:       qsTr("Fleet (%1)").arg(_vehicles ? _vehicles.count : 0)
                         font.bold:  true
-                        color:      "#e67e22"
+                        color:      _uiAccentBlue
                     }
 
                     Repeater {
@@ -853,7 +826,9 @@ Rectangle {
                 Layout.fillWidth:   true
                 implicitHeight:     targetCol.height + _margin * 2
                 radius:             _margin
-                color:              qgcPal.windowShade
+                color:              _cardFillColor
+                border.width:       1
+                border.color:       _cardBorderColor
 
                 ColumnLayout {
                     id: targetCol
@@ -869,13 +844,18 @@ Rectangle {
                         QGCLabel {
                             text:       qsTr("Targets (%1)").arg(sarTargetManager ? sarTargetManager.totalTargets : 0)
                             font.bold:  true
-                            color:      "#f39c12"
+                            color:      qgcPal.colorOrange
                             Layout.fillWidth: true
                         }
 
                         QGCButton {
                             text:       _root.markTargetMode ? qsTr("Stop Marking") : qsTr("Mark on Map")
                             font.pointSize: ScreenTools.smallFontPointSize
+                            backgroundColor: _root.markTargetMode
+                                             ? Qt.rgba(qgcPal.colorOrange.r, qgcPal.colorOrange.g, qgcPal.colorOrange.b, 0.94)
+                                             : Qt.rgba(_uiAccentBlue.r, _uiAccentBlue.g, _uiAccentBlue.b, 0.20)
+                            textColor:  _root.markTargetMode ? "white" : qgcPal.text
+                            backRadius: height / 2
                             onClicked:  _root.markTargetMode = !_root.markTargetMode
                         }
                     }
@@ -953,113 +933,6 @@ Rectangle {
                 }
             }
 
-            // ── Operation Control ──
-            Rectangle {
-                Layout.fillWidth:   true
-                implicitHeight:     opCol.height + _margin * 2
-                radius:             _margin
-                color:              Qt.rgba(0.9, 0.5, 0.13, 0.1)
-
-                ColumnLayout {
-                    id: opCol
-                    anchors.left:       parent.left
-                    anchors.right:      parent.right
-                    anchors.top:        parent.top
-                    anchors.margins:    _margin
-                    spacing:            _margin
-
-                    QGCLabel {
-                        text:       qsTr("Operation")
-                        font.bold:  true
-                        color:      "#e67e22"
-                    }
-
-                    RowLayout {
-                        Layout.fillWidth: true
-                        spacing: _margin
-
-                        QGCButton {
-                            text: {
-                                if (!sarMissionManager) return qsTr("Start")
-                                if (sarMissionManager.missionActive && sarMissionManager.paused) return qsTr("Resume")
-                                return qsTr("Start")
-                            }
-                            Layout.fillWidth:   true
-                            enabled: {
-                                if (!sarMissionManager) return false
-                                // Allow Resume when mission is active and paused
-                                if (sarMissionManager.missionActive && sarMissionManager.paused) return true
-                                // Allow Start when mission is not active and readiness checks pass
-                                return !sarMissionManager.missionActive && _canStartMission
-                            }
-                            onClicked: {
-                                if (sarMissionManager.missionActive && sarMissionManager.paused) {
-                                    sarMissionManager.resumeOperation()
-                                } else {
-                                    sarMissionManager.startOperation()
-                                }
-                            }
-                        }
-
-                        QGCButton {
-                            text:               qsTr("Pause")
-                            Layout.fillWidth:   true
-                            enabled:            sarMissionManager && sarMissionManager.missionActive && !sarMissionManager.paused
-                            onClicked:          sarMissionManager.pauseOperation()
-                        }
-
-                        QGCButton {
-                            text:               qsTr("Abort")
-                            Layout.fillWidth:   true
-                            enabled:            sarMissionManager
-                                                && sarMissionManager.missionActive
-                                                && !sarMissionManager.abortInProgress
-                            onClicked: {
-                                QGroundControl.showMessageDialog(
-                                    _root,
-                                    qsTr("Abort Operation"),
-                                    qsTr("This will land all drones, disarm them, clear missions, and reset the entire SAR state back to Planning.\n\nAre you sure?"),
-                                    Dialog.Yes | Dialog.No,
-                                    function() { sarMissionManager.abortOperation() }
-                                )
-                            }
-                        }
-                    }
-
-                    // Abort progress indicator
-                    RowLayout {
-                        visible:            sarMissionManager && sarMissionManager.abortInProgress
-                        Layout.fillWidth:   true
-                        spacing:            _margin
-
-                        BusyIndicator {
-                            running:    true
-                            Layout.preferredWidth:  ScreenTools.defaultFontPixelHeight * 1.5
-                            Layout.preferredHeight: Layout.preferredWidth
-                        }
-
-                        QGCLabel {
-                            text:               sarMissionManager ? sarMissionManager.abortStatusText : ""
-                            color:              "#e74c3c"
-                            font.bold:          true
-                            font.pointSize:     ScreenTools.smallFontPointSize
-                            Layout.fillWidth:   true
-                        }
-                    }
-
-                    // Readiness status when mission cannot start
-                    QGCLabel {
-                        visible:    sarMissionManager && !sarMissionManager.missionActive
-                                    && !sarMissionManager.abortInProgress
-                                    && sarMissionManager.startBlockedReason !== ""
-                        text:       sarMissionManager ? sarMissionManager.startBlockedReason : ""
-                        color:      "#e74c3c"
-                        font.italic: true
-                        font.pointSize: ScreenTools.smallFontPointSize
-                    }
-                }
-            }
-
             // ══════════════════════════════════════════════════════════════
             // ── Coordination (Multi-Vehicle) ──
             // ══════════════════════════════════════════════════════════════
@@ -1067,7 +940,9 @@ Rectangle {
                 Layout.fillWidth:   true
                 implicitHeight:     coordCol.height + _margin * 2
                 radius:             _margin
-                color:              qgcPal.windowShade
+                color:              _cardFillColor
+                border.width:       1
+                border.color:       _cardBorderColor
 
                 ColumnLayout {
                     id: coordCol
@@ -1084,7 +959,7 @@ Rectangle {
                         QGCLabel {
                             text:               qsTr("Coordination")
                             font.bold:          true
-                            color:              "#e67e22"
+                            color:              _uiAccentBlue
                             Layout.fillWidth:   true
                         }
 
@@ -1529,7 +1404,9 @@ Rectangle {
                 Layout.fillWidth:   true
                 implicitHeight:     reTaskCol.height + _margin * 2
                 radius:             _margin
-                color:              qgcPal.windowShade
+                color:              _cardFillColor
+                border.width:       1
+                border.color:       _cardBorderColor
 
                 ColumnLayout {
                     id: reTaskCol
@@ -1546,7 +1423,7 @@ Rectangle {
                         QGCLabel {
                             text:               qsTr("Dynamic Re-Tasking")
                             font.bold:          true
-                            color:              "#e74c3c"
+                            color:              qgcPal.colorOrange
                             Layout.fillWidth:   true
                         }
 
@@ -1781,7 +1658,9 @@ Rectangle {
                 Layout.fillWidth:   true
                 implicitHeight:     envCol.height + _margin * 2
                 radius:             _margin
-                color:              qgcPal.windowShade
+                color:              _cardFillColor
+                border.width:       1
+                border.color:       _cardBorderColor
 
                 ColumnLayout {
                     id: envCol
@@ -1798,7 +1677,7 @@ Rectangle {
                         QGCLabel {
                             text:               qsTr("Environmental Data")
                             font.bold:          true
-                            color:              "#00bcd4"
+                            color:              _uiAccentBlue
                             Layout.fillWidth:   true
                         }
 
@@ -2154,57 +2033,6 @@ Rectangle {
                                     color:   "#2196f3"
                                     font.pointSize: ScreenTools.smallFontPointSize
                                     font.italic: true
-                                }
-                            }
-                        }
-
-                        // ── API Key Configuration ──
-                        Rectangle {
-                            Layout.fillWidth:   true
-                            implicitHeight:     apiKeyCol.height + _margin * 2
-                            radius:             _margin * 0.5
-                            color:              Qt.rgba(1, 1, 1, 0.03)
-                            visible:            environmentalDataProvider && environmentalDataProvider.apiKey === ""
-
-                            ColumnLayout {
-                                id: apiKeyCol
-                                anchors.left:       parent.left
-                                anchors.right:      parent.right
-                                anchors.top:        parent.top
-                                anchors.margins:    _margin
-                                spacing:            _margin * 0.5
-
-                                QGCLabel {
-                                    text:       qsTr("Weather API Key")
-                                    color:      "#888"
-                                    font.pointSize: ScreenTools.smallFontPointSize
-                                }
-
-                                RowLayout {
-                                    Layout.fillWidth: true
-                                    spacing: _margin
-
-                                    TextField {
-                                        id:                 apiKeyField
-                                        Layout.fillWidth:   true
-                                        placeholderText:    qsTr("OpenWeatherMap API key")
-                                        font.pointSize:     ScreenTools.smallFontPointSize
-                                        color:              qgcPal.text
-                                        background: Rectangle {
-                                            color:  Qt.rgba(1, 1, 1, 0.08)
-                                            radius: 3
-                                        }
-                                    }
-
-                                    QGCButton {
-                                        text:   qsTr("Set")
-                                        font.pointSize: ScreenTools.smallFontPointSize
-                                        onClicked: {
-                                            if (environmentalDataProvider && apiKeyField.text.length > 0) {
-                                                environmentalDataProvider.setApiKey(apiKeyField.text)
-                                            }
-                                        }
-                                    }
                                 }
                             }
                         }

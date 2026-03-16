@@ -6,6 +6,7 @@ import QtQuick.Dialogs
 import QGroundControl
 import QGroundControl.Controls
 import QGroundControl.FlyView
+import "qrc:/custom/Sadron" as Sadron
 
 Item {
     required property var guidedValueSlider
@@ -25,6 +26,24 @@ Item {
     }
 
     QGCPalette { id: qgcPal }
+
+    Sadron.SadronGlassPanel {
+        anchors.fill:   parent
+        padding:        0
+        radius:         0
+        elevated:       false
+        panelColor:     qgcPal.windowShadeDark
+        panelOpacity:   qgcPal.globalTheme === QGCPalette.Light ? 0.88 : 0.76
+        borderWidth:    0
+    }
+
+    Rectangle {
+        anchors.left:   parent.left
+        anchors.right:  parent.right
+        anchors.bottom: parent.bottom
+        height:         1
+        color:          Qt.rgba(1, 1, 1, 0.06)
+    }
 
     QGCFlickable {
         anchors.fill:       parent
@@ -46,13 +65,12 @@ Item {
                     id:         gradientBackground
                     height:     parent.height
                     width:      mainStatusLayout.width
-                    opacity:    qgcPal.windowTransparent.a
+                    opacity:    1
 
                     gradient: Gradient {
                         orientation: Gradient.Horizontal
-                        GradientStop { position: 0; color: _mainStatusBGColor }
-                        //GradientStop { position: qgcButton.x + qgcButton.width; color: _mainStatusBGColor }
-                        GradientStop { position: 1; color: qgcPal.window }
+                        GradientStop { position: 0; color: Qt.rgba(_mainStatusBGColor.r, _mainStatusBGColor.g, _mainStatusBGColor.b, qgcPal.globalTheme === QGCPalette.Light ? 0.18 : 0.28) }
+                        GradientStop { position: 1; color: Qt.rgba(_mainStatusBGColor.r, _mainStatusBGColor.g, _mainStatusBGColor.b, 0.02) }
                     }
                 }
 
@@ -61,7 +79,7 @@ Item {
                     anchors.left:   gradientBackground.right
                     anchors.right:  parent.right
                     height:         parent.height
-                    color:          qgcPal.windowTransparent
+                    color:          "transparent"
                 }
 
                 RowLayout {
@@ -109,7 +127,7 @@ Item {
 
                 Rectangle {
                     anchors.fill:   parent
-                    color:          qgcPal.windowTransparent
+                    color:          "transparent"
                 }
 
                 GuidedActionConfirm {
@@ -129,7 +147,7 @@ Item {
 
                 Rectangle {
                     anchors.fill:   parent
-                    color:          qgcPal.windowTransparent
+                    color:          "transparent"
                 }
 
                 FlyViewToolBarIndicators {
@@ -142,21 +160,22 @@ Item {
 
     // The guided action message display is outside of the GuidedActionConfirm control so that it doesn't end up as
     // part of the Flickable
-    Rectangle {
+    Sadron.SadronGlassPanel {
         id:                         guidedActionMessageDisplay
         anchors.top:                control.bottom
         anchors.topMargin:          _margins
         x:                          control.mapFromItem(guidedActionConfirm.parent, guidedActionConfirm.x, 0).x + (guidedActionConfirm.width - guidedActionMessageDisplay.width) / 2
         width:                      messageLabel.contentWidth + (_margins * 2)
         height:                     messageLabel.contentHeight + (_margins * 2)
-        color:                      qgcPal.windowTransparent
+        padding:                    _margins
         radius:                     ScreenTools.defaultBorderRadius
+        panelColor:                 qgcPal.windowShadeDark
+        panelOpacity:               qgcPal.globalTheme === QGCPalette.Light ? 0.9 : 0.82
+        borderColor:                Qt.rgba(1, 1, 1, 0.08)
         visible:                    guidedActionConfirm.visible
 
         QGCLabel {
             id:         messageLabel
-            x:          _margins
-            y:          _margins
             width:      ScreenTools.defaultFontPixelWidth * 30
             wrapMode:   Text.WordWrap
             text:       guidedActionConfirm.message

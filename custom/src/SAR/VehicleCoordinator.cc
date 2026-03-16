@@ -596,7 +596,7 @@ void VehicleCoordinator::_checkProximityConflicts()
                     resolution = QStringLiteral("Vertically separated (%1m)").arg(vDist, 0, 'f', 1);
 
                     // Clear altitude adjustment if separation is now adequate
-                    _altitudeAdjustments.remove(qMax(idA, idB));
+                    _restoreAltitudeAdjust(qMax(idA, idB));
                 }
 
                 // Update or create conflict entry
@@ -626,7 +626,7 @@ void VehicleCoordinator::_checkProximityConflicts()
                               qMax(conflict->vehicleIdA(), conflict->vehicleIdB()));
         if (!activeConflictPairs.contains(pair)) {
             // Clear altitude adjustments for resolved conflicts
-            _altitudeAdjustments.remove(qMax(conflict->vehicleIdA(), conflict->vehicleIdB()));
+            _restoreAltitudeAdjust(qMax(conflict->vehicleIdA(), conflict->vehicleIdB()));
 
             _conflicts->removeAt(i);
             conflict->deleteLater();
@@ -660,11 +660,14 @@ void VehicleCoordinator::_commandAltitudeAdjust(int vehicleId, double deltaAltM)
         return;
     }
 
-    // Don't send altitude commands to vehicles executing a mission — PX4 ignores
-    // MAV_CMD_DO_REPOSITION in mission mode and it spams "Ignore command 192" logs
-    if (!vehicle->flying() || vehicle->flightMode() == vehicle->missionFlightMode()) {
+    // Only issue temporary deconfliction changes while the vehicle is already
+    // in a guided/hold-style state that accepts altitude nudges safely.
+    if (!vehicle->flying()
+        || !vehicle->guidedModeSupported()
+        || !vehicle->guidedMode()
+        || !vehicle->firmwarePlugin()) {
         qCDebug(VehicleCoordinatorLog) << "Skipping altitude adjust for V" << vehicleId
-            << "— vehicle in mission mode";
+            << "— vehicle not in a safe guided state";
         return;
     }
 
@@ -678,6 +681,34 @@ void VehicleCoordinator::_commandAltitudeAdjust(int vehicleId, double deltaAltM)
     vehicle->guidedModeChangeAltitude(deltaAltM, false /* pauseVehicle */);
 
     emit altitudeAdjusted(vehicleId, newAlt);
+}
+
+void VehicleCoordinator::_restoreAltitudeAdjust(int vehicleId)
+{
+    const double previousAdjustment = _altitudeAdjustments.value(vehicleId, 0.0);
+    if (qFuzzyIsNull(previousAdjustment)) {
+        _altitudeAdjustments.remove(vehicleId);
+        return;
+    }
+
+    Vehicle *vehicle = MultiVehicleManager::instance()->getVehicleById(vehicleId);
+    if (!vehicle) {
+        _altitudeAdjustments.remove(vehicleId);
+        return;
+    }
+
+    if (!vehicle->flying()
+        || !vehicle->guidedModeSupported()
+        || !vehicle->guidedMode()
+        || !vehicle->firmwarePlugin()) {
+        _altitudeAdjustments.remove(vehicleId);
+        return;
+    }
+
+    vehicle->guidedModeChangeAltitude(-previousAdjustment, false /* pauseVehicle */);
+    _altitudeAdjustments.remove(vehicleId);
+
+    emit altitudeAdjusted(vehicleId, vehicle->altitudeRelative()->rawValue().toDouble() - previousAdjustment);
 }
 
 ProximityConflict *VehicleCoordinator::_findConflict(int idA, int idB) const
@@ -786,7 +817,6 @@ void VehicleCoordinator::_handleCommsRestored(int vehicleId)
     evt->setState(CommsLossEvent::CommsRestored);
 
     emit commsRestored(vehicleId);
-    emit commsLossChanged();
 
     if (!wasReassigned && _zoneMgr) {
         SARZone *zone = _zoneMgr->zoneForVehicle(vehicleId);
@@ -795,6 +825,8 @@ void VehicleCoordinator::_handleCommsRestored(int vehicleId)
             qCInfo(VehicleCoordinatorLog) << "Zone" << zone->zoneId() << "resumed for V" << vehicleId;
         }
     }
+
+    _removeCommsLossEvent(vehicleId);
 }
 
 void VehicleCoordinator::_onNodeLost(int vehicleId)
@@ -810,6 +842,23 @@ void VehicleCoordinator::_onNodeAdded(int vehicleId)
     CommsLossEvent *evt = _findCommsLossEvent(vehicleId);
     if (evt && (evt->state() == CommsLossEvent::Detected || evt->state() == CommsLossEvent::RTLTriggered)) {
         _handleCommsRestored(vehicleId);
+    }
+}
+
+void VehicleCoordinator::_removeCommsLossEvent(int vehicleId)
+{
+    bool removed = false;
+    for (int i = _commsLossEvents->count() - 1; i >= 0; --i) {
+        auto *evt = qobject_cast<CommsLossEvent *>(_commsLossEvents->get(i));
+        if (evt && evt->vehicleId() == vehicleId) {
+            _commsLossEvents->removeAt(i);
+            evt->deleteLater();
+            removed = true;
+        }
+    }
+
+    if (removed) {
+        emit commsLossChanged();
     }
 }
 
@@ -870,6 +919,8 @@ void VehicleCoordinator::reassignLostVehicleZone(int vehicleId)
         << "to V" << newVehicleId;
 
     emit zoneReassigned(zoneId, vehicleId, newVehicleId);
+
+    _removeCommsLossEvent(vehicleId);
 }
 
 int VehicleCoordinator::_findBestReassignmentTarget(int excludeVehicleId, const QGeoCoordinate &zoneCenter) const

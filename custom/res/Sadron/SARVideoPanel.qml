@@ -19,6 +19,201 @@ Rectangle {
     property var  _activeVehicle: QGroundControl.multiVehicleManager.activeVehicle
     property bool _recording:   QGroundControl.videoManager.recording
     property int  _vehicleCount: _vehicles ? _vehicles.count : 0
+    property var  _feedPreferenceByVehicleId: ({})
+
+    function _vehicleKey(vehicle) {
+        return vehicle ? vehicle.id.toString() : ""
+    }
+
+    function _currentCamera(vehicle) {
+        if (!vehicle || !vehicle.cameraManager || !vehicle.cameraManager.currentCameraInstance) {
+            return null
+        }
+
+        return vehicle.cameraManager.currentCameraInstance
+    }
+
+    function _streamLabelCount(camera) {
+        return camera && camera.streamLabels ? camera.streamLabels.length : 0
+    }
+
+    function _cloneFeedOption(option) {
+        if (!option) {
+            return null
+        }
+
+        return {
+            key: option.key,
+            label: option.label,
+            mode: option.mode,
+            cameraIndex: option.cameraIndex,
+            streamIndex: option.streamIndex
+        }
+    }
+
+    function _buildFeedOptions(vehicle) {
+        const options = []
+        if (!vehicle || !vehicle.cameraManager) {
+            return options
+        }
+
+        const cameraManager = vehicle.cameraManager
+        const cameraLabels = cameraManager.cameraLabels ? cameraManager.cameraLabels : []
+        for (let cameraIndex = 0; cameraIndex < cameraManager.cameras.count; cameraIndex++) {
+            const camera = cameraManager.cameras.get(cameraIndex)
+            if (!camera || !camera.hasVideoStream) {
+                continue
+            }
+
+            const cameraLabel = cameraLabels.length > cameraIndex && cameraLabels[cameraIndex]
+                                ? cameraLabels[cameraIndex]
+                                : qsTr("Camera %1").arg(cameraIndex + 1)
+            const visibleLabel = cameraManager.cameras.count > 1
+                                 ? qsTr("%1 Normal Camera").arg(cameraLabel)
+                                 : qsTr("Normal Camera")
+
+            const streamCount = _streamLabelCount(camera)
+            if (streamCount > 0) {
+                for (let streamIndex = 0; streamIndex < streamCount; streamIndex++) {
+                    const streamLabel = camera.streamLabels[streamIndex]
+                    options.push({
+                        key: "visible:" + cameraIndex + ":" + streamIndex,
+                        label: streamIndex === 0
+                               ? visibleLabel
+                               : (cameraManager.cameras.count > 1
+                                  ? qsTr("%1 %2").arg(cameraLabel).arg(streamLabel)
+                                  : streamLabel),
+                        mode: "visible",
+                        cameraIndex: cameraIndex,
+                        streamIndex: streamIndex
+                    })
+                }
+            } else {
+                options.push({
+                    key: "visible:" + cameraIndex + ":0",
+                    label: visibleLabel,
+                    mode: "visible",
+                    cameraIndex: cameraIndex,
+                    streamIndex: 0
+                })
+            }
+
+            if (camera.thermalStreamInstance) {
+                options.push({
+                    key: "thermal:" + cameraIndex,
+                    label: cameraManager.cameras.count > 1
+                           ? qsTr("%1 Thermal Sensor").arg(cameraLabel)
+                           : qsTr("Thermal Sensor"),
+                    mode: "thermal",
+                    cameraIndex: cameraIndex,
+                    streamIndex: -1
+                })
+            }
+        }
+
+        if (options.length === 0) {
+            options.push({
+                key: "visible:0:0",
+                label: qsTr("Normal Camera"),
+                mode: "visible",
+                cameraIndex: 0,
+                streamIndex: 0
+            })
+        }
+
+        return options
+    }
+
+    function _defaultFeedPreference(vehicle) {
+        const options = _buildFeedOptions(vehicle)
+        return options.length > 0 ? _cloneFeedOption(options[0]) : null
+    }
+
+    function _feedPreferenceForVehicle(vehicle) {
+        const key = _vehicleKey(vehicle)
+        if (!key) {
+            return null
+        }
+
+        const saved = _feedPreferenceByVehicleId[key]
+        const options = _buildFeedOptions(vehicle)
+        if (options.length === 0) {
+            return null
+        }
+
+        if (saved) {
+            for (let i = 0; i < options.length; i++) {
+                if (options[i].key === saved.key) {
+                    return _cloneFeedOption(options[i])
+                }
+            }
+        }
+
+        return _cloneFeedOption(options[0])
+    }
+
+    function _setFeedPreference(vehicle, preference) {
+        const key = _vehicleKey(vehicle)
+        if (!key) {
+            return
+        }
+
+        const normalized = preference ? _cloneFeedOption(preference) : _defaultFeedPreference(vehicle)
+        const next = Object.assign({}, _feedPreferenceByVehicleId)
+        if (normalized) {
+            next[key] = normalized
+        } else {
+            delete next[key]
+        }
+        _feedPreferenceByVehicleId = next
+    }
+
+    function _applyFeedPreference(vehicle) {
+        const preference = _feedPreferenceForVehicle(vehicle)
+        if (!vehicle || !vehicle.cameraManager || !preference) {
+            return
+        }
+
+        const cameraManager = vehicle.cameraManager
+        if (preference.cameraIndex >= 0 && preference.cameraIndex < cameraManager.cameras.count) {
+            cameraManager.currentCamera = preference.cameraIndex
+        }
+
+        const camera = _currentCamera(vehicle)
+        if (!camera) {
+            return
+        }
+
+        if (preference.mode === "thermal") {
+            if (camera.thermalStreamInstance) {
+                camera.thermalMode = MavlinkCameraControl.THERMAL_FULL
+            } else {
+                const fallback = _defaultFeedPreference(vehicle)
+                _setFeedPreference(vehicle, fallback)
+                _applyFeedPreference(vehicle)
+            }
+            return
+        }
+
+        camera.thermalMode = MavlinkCameraControl.THERMAL_OFF
+        if (preference.streamIndex >= 0 && preference.streamIndex < _streamLabelCount(camera)) {
+            camera.currentStream = preference.streamIndex
+        }
+    }
+
+    function _pruneMissingVehiclePreferences() {
+        const next = {}
+        if (_vehicles) {
+            for (let i = 0; i < _vehicles.count; i++) {
+                const vehicle = _vehicles.get(i)
+                const key = _vehicleKey(vehicle)
+                if (key && _feedPreferenceByVehicleId[key]) {
+                    next[key] = _feedPreferenceByVehicleId[key]
+                }
+            }
+        }
+        _feedPreferenceByVehicleId = next
+    }
 
     // Determine grid columns based on available width and vehicle count
     property int _columns: {
@@ -29,6 +224,24 @@ Rectangle {
     }
 
     QGCPalette { id: qgcPal; colorGroupEnabled: true }
+
+    Connections {
+        target: QGroundControl.multiVehicleManager
+
+        function onActiveVehicleChanged(vehicle) {
+            _root._applyFeedPreference(vehicle)
+        }
+    }
+
+    Connections {
+        target: _vehicles
+
+        function onCountChanged() {
+            _root._pruneMissingVehiclePreferences()
+        }
+    }
+
+    Component.onCompleted: _applyFeedPreference(_activeVehicle)
 
     ColumnLayout {
         anchors.fill:       parent
@@ -196,9 +409,10 @@ Rectangle {
                 }
 
                 QGCLabel {
+                    property var activePreference: _root._feedPreferenceForVehicle(_activeVehicle)
                     text:   QGroundControl.videoManager.decoding
-                            ? qsTr("Live feed: V%1").arg(_activeVehicle ? _activeVehicle.id : "?")
-                            : qsTr("No video signal from V%1").arg(_activeVehicle ? _activeVehicle.id : "?")
+                            ? qsTr("Live feed: V%1 - %2").arg(_activeVehicle ? _activeVehicle.id : "?").arg(activePreference ? activePreference.label : qsTr("Normal Camera"))
+                            : qsTr("No video signal from V%1 (%2)").arg(_activeVehicle ? _activeVehicle.id : "?").arg(activePreference ? activePreference.label : qsTr("Normal Camera"))
                     color:  qgcPal.text
                     font.pointSize: ScreenTools.smallFontPointSize
                 }
@@ -250,9 +464,18 @@ Rectangle {
 
                         onLoaded: {
                             item.vehicle = Qt.binding(function() { return _vehicle })
+                            item.feedOptions = Qt.binding(function() { return _root._buildFeedOptions(_vehicle) })
+                            item.currentFeedPreference = Qt.binding(function() { return _root._feedPreferenceForVehicle(_vehicle) })
                             item.switchRequested.connect(function(v) {
                                 if (v) {
                                     QGroundControl.multiVehicleManager.activeVehicle = v
+                                    _root._applyFeedPreference(v)
+                                }
+                            })
+                            item.feedPreferenceChanged.connect(function(v, preference) {
+                                _root._setFeedPreference(v, preference)
+                                if (v && QGroundControl.multiVehicleManager.activeVehicle === v) {
+                                    _root._applyFeedPreference(v)
                                 }
                             })
                             item.recordToggled.connect(function(v) {

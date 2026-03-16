@@ -18,10 +18,28 @@ Rectangle {
     property bool isActive:     vehicle && QGroundControl.multiVehicleManager.activeVehicle === vehicle
     /// Compact mode reduces font sizes for small tiles
     property bool compact:      false
+    property var  feedOptions:  []
+    property var  currentFeedPreference: null
 
     property real _margin:      ScreenTools.defaultFontPixelWidth * 0.5
     property real _smallFont:   compact ? ScreenTools.smallFontPointSize * 0.9 : ScreenTools.smallFontPointSize
     property real _tinyFont:    compact ? ScreenTools.smallFontPointSize * 0.8 : ScreenTools.smallFontPointSize * 0.9
+    property var  _feedLabels: {
+        const labels = []
+        for (let i = 0; i < feedOptions.length; i++) {
+            labels.push(feedOptions[i].label)
+        }
+        return labels
+    }
+    property int _currentFeedIndex: {
+        const key = currentFeedPreference ? currentFeedPreference.key : ""
+        for (let i = 0; i < feedOptions.length; i++) {
+            if (feedOptions[i].key === key) {
+                return i
+            }
+        }
+        return feedOptions.length > 0 ? 0 : -1
+    }
 
     // Telemetry values (guard nested Fact access — property may be null during init)
     property real _heading:     vehicle && vehicle.heading          ? vehicle.heading.rawValue          : 0
@@ -39,6 +57,7 @@ Rectangle {
 
     signal switchRequested(var vehicle)
     signal recordToggled(var vehicle)
+    signal feedPreferenceChanged(var vehicle, var preference)
 
     QGCPalette { id: qgcPal; colorGroupEnabled: true }
 
@@ -95,6 +114,27 @@ Rectangle {
                     font.pointSize:     _smallFont
                     Layout.fillWidth:   true
                     elide:              Text.ElideRight
+                }
+
+                QGCComboBox {
+                    id:                 feedSelector
+                    Layout.preferredWidth: compact
+                                           ? ScreenTools.defaultFontPixelWidth * 13
+                                           : ScreenTools.defaultFontPixelWidth * 16
+                    Layout.maximumWidth: Layout.preferredWidth
+                    Layout.alignment:   Qt.AlignVCenter
+                    model:              _root._feedLabels
+                    currentIndex:       _root._currentFeedIndex
+                    enabled:            _root._feedLabels.length > 0
+                    visible:            _root._feedLabels.length > 0
+
+                    onActivated: function(index) {
+                        if (index < 0 || index >= _root.feedOptions.length) {
+                            return
+                        }
+
+                        _root.feedPreferenceChanged(_root.vehicle, _root.feedOptions[index])
+                    }
                 }
 
                 // Record button (only functional for active vehicle)

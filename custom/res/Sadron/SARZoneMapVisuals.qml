@@ -5,6 +5,7 @@ import QtPositioning
 import QGroundControl
 import QGroundControl.Controls
 import QGroundControl.FlightMap
+import "qrc:/custom/Sadron" as Sadron
 
 // Renders search area polygon + sub-zone polygons on the flight map
 // Defers QGCMapPolygonVisuals creation until mapControl is valid
@@ -48,10 +49,10 @@ Item {
                     parent:             _root.mapControl
                     mapControl:         _root.mapControl
                     mapPolygon:         zoneDelegate._zone ? zoneDelegate._zone.mapPolygon : null
-                    borderWidth:        zoneDelegate._zone && zoneDelegate._zone.selected ? 4 : 3
-                    borderColor:        zoneDelegate._zone ? zoneDelegate._zone.displayColor : "transparent"
+                    borderWidth:        zoneDelegate._zone && zoneDelegate._zone.selected ? 5 : 3
+                    borderColor:        zoneDelegate._zone && zoneDelegate._zone.selected ? "#3B82F6" : (zoneDelegate._zone ? zoneDelegate._zone.displayColor : "transparent")
                     interiorColor:      zoneDelegate._zone ? zoneDelegate._zone.displayColor : "transparent"
-                    interiorOpacity:    zoneDelegate._zone && zoneDelegate._zone.selected ? 0.40 : 0.28
+                    interiorOpacity:    zoneDelegate._zone && zoneDelegate._zone.selected ? 0.32 : 0.22
                     interactive:        false
                 }
             }
@@ -66,14 +67,16 @@ Item {
                     anchorPoint.y:  labelRect.height / 2
                     z:              QGroundControl.zOrderMapItems
 
-                    sourceItem: Rectangle {
+                    sourceItem: Sadron.SadronGlassPanel {
                         id:     labelRect
                         width:  labelCol.width + ScreenTools.defaultFontPixelWidth * 1.5
                         height: labelCol.height + ScreenTools.defaultFontPixelHeight * 0.4
-                        radius: ScreenTools.defaultFontPixelHeight * 0.25
-                        color:  Qt.rgba(0, 0, 0, 0.7)
-                        border.color: zoneDelegate._zone && zoneDelegate._zone.selected ? "white" : (zoneDelegate._zone ? zoneDelegate._zone.displayColor : "transparent")
-                        border.width: zoneDelegate._zone && zoneDelegate._zone.selected ? 2 : 1
+                        padding: ScreenTools.defaultFontPixelWidth * 0.6
+                        radius: ScreenTools.defaultFontPixelHeight * 0.5
+                        panelColor: QGroundControl.globalPalette.windowShadeDark
+                        panelOpacity: QGroundControl.globalPalette.globalTheme === QGCPalette.Light ? 0.94 : 0.86
+                        borderColor: zoneDelegate._zone && zoneDelegate._zone.selected ? "#60a5fa" : Qt.rgba(1, 1, 1, 0.08)
+                        borderWidth: zoneDelegate._zone && zoneDelegate._zone.selected ? 2 : 1
 
                         Column {
                             id: labelCol

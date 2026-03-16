@@ -4,9 +4,10 @@ import QtQuick.Layouts
 
 import QGroundControl
 import QGroundControl.Controls
+import "qrc:/custom/Sadron" as Sadron
 
 // Right-side per-zone editor panel for overriding search parameters
-Rectangle {
+Sadron.SadronGlassPanel {
     id: _root
 
     property var zone
@@ -15,8 +16,11 @@ Rectangle {
     signal closeEditor()
 
     width:  ScreenTools.defaultFontPixelWidth * 28
-    color:  qgcPal.window
-    radius: ScreenTools.defaultFontPixelHeight * 0.25
+    padding: 0
+    radius: ScreenTools.defaultFontPixelHeight * 0.5
+    panelColor: qgcPal.windowShadeDark
+    panelOpacity: qgcPal.globalTheme === QGCPalette.Light ? 0.94 : 0.86
+    borderColor: Qt.rgba(1, 1, 1, 0.08)
 
     property real _margin: ScreenTools.defaultFontPixelWidth * 0.75
 
@@ -50,7 +54,7 @@ Rectangle {
                     text:               _root.zone ? _root.zone.name : ""
                     font.bold:          true
                     font.pointSize:     ScreenTools.mediumFontPointSize
-                    color:              "#e67e22"
+                    color:              qgcPal.brandingPurple
                     Layout.fillWidth:   true
                 }
 
@@ -59,7 +63,9 @@ Rectangle {
                     width:  ScreenTools.defaultFontPixelHeight * 1.2
                     height: width
                     radius: width / 2
-                    color:  closeMa.containsMouse ? Qt.rgba(1, 1, 1, 0.2) : "transparent"
+                    color:  closeMa.containsMouse ? Qt.rgba(1, 1, 1, 0.10) : "transparent"
+                    border.width: 1
+                    border.color: Qt.rgba(1, 1, 1, closeMa.containsMouse ? 0.16 : 0.08)
 
                     QGCLabel {
                         anchors.centerIn:   parent
@@ -92,11 +98,14 @@ Rectangle {
             }
 
             // ── Grid Settings Section ──
-            Rectangle {
+            Sadron.SadronGlassPanel {
                 Layout.fillWidth: true
                 implicitHeight: gridSettingsCol.height + _margin * 2
-                radius: _margin
-                color:  qgcPal.windowShade
+                padding: 0
+                radius: ScreenTools.defaultFontPixelHeight * 0.5
+                panelColor: qgcPal.windowShade
+                panelOpacity: qgcPal.globalTheme === QGCPalette.Light ? 0.96 : 0.90
+                borderColor: Qt.rgba(1, 1, 1, 0.06)
 
                 ColumnLayout {
                     id: gridSettingsCol
@@ -109,7 +118,7 @@ Rectangle {
                     QGCLabel {
                         text:       qsTr("Grid Settings")
                         font.bold:  true
-                        color:      "#e67e22"
+                        color:      qgcPal.brandingPurple
                     }
 
                     // Use global params toggle
@@ -165,11 +174,14 @@ Rectangle {
             }
 
             // ── Flight Parameters Section ──
-            Rectangle {
+            Sadron.SadronGlassPanel {
                 Layout.fillWidth: true
                 implicitHeight: flightParamsCol.height + _margin * 2
-                radius: _margin
-                color:  qgcPal.windowShade
+                padding: 0
+                radius: ScreenTools.defaultFontPixelHeight * 0.5
+                panelColor: qgcPal.windowShade
+                panelOpacity: qgcPal.globalTheme === QGCPalette.Light ? 0.96 : 0.90
+                borderColor: Qt.rgba(1, 1, 1, 0.06)
 
                 ColumnLayout {
                     id: flightParamsCol
@@ -182,7 +194,7 @@ Rectangle {
                     QGCLabel {
                         text:       qsTr("Flight Parameters")
                         font.bold:  true
-                        color:      "#e67e22"
+                        color:      qgcPal.brandingPurple
                     }
 
                     GridLayout {
@@ -221,11 +233,14 @@ Rectangle {
             }
 
             // ── Vehicle Assignment Section ──
-            Rectangle {
+            Sadron.SadronGlassPanel {
                 Layout.fillWidth: true
                 implicitHeight: vehicleAssignCol.height + _margin * 2
-                radius: _margin
-                color:  qgcPal.windowShade
+                padding: 0
+                radius: ScreenTools.defaultFontPixelHeight * 0.5
+                panelColor: qgcPal.windowShade
+                panelOpacity: qgcPal.globalTheme === QGCPalette.Light ? 0.96 : 0.90
+                borderColor: Qt.rgba(1, 1, 1, 0.06)
 
                 ColumnLayout {
                     id: vehicleAssignCol
@@ -238,7 +253,7 @@ Rectangle {
                     QGCLabel {
                         text:       qsTr("Vehicle Assignment")
                         font.bold:  true
-                        color:      "#e67e22"
+                        color:      qgcPal.brandingPurple
                     }
 
                     QGCLabel {
@@ -265,6 +280,8 @@ Rectangle {
 
                         QGCButton {
                             text: qsTr("Assign")
+                            backgroundColor: qgcPal.colorOrange
+                            textColor: "white"
                             enabled: _root.zone && sarZoneManager && sarMissionManager
                                      && sarMissionManager.connectedVehicleCount >= 0
                                      && sarMissionManager.isVehicleConnected(vehicleIdSpin.value)
@@ -291,7 +308,8 @@ Rectangle {
 
             // ── Actions ──
             QGCButton {
-                text:               qsTr("Regenerate Flight Path")
+                text:               qsTr("Generate Transect")
+                primary:            true
                 Layout.fillWidth:   true
                 onClicked: {
                     if (_root.zone && sarMissionManager) {

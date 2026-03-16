@@ -5,6 +5,7 @@ import QtQuick.Layouts
 import QGroundControl
 import QGroundControl.Controls
 import Custom.Widgets
+import "qrc:/custom/Sadron" as Sadron
 
 // Sadron SAR custom FlyView layer
 // Integrates SAR panel, zone map visuals, target map visuals, and toast feedback
@@ -442,8 +443,22 @@ Item {
         }
     }
 
+    // ── Show consolidated "remove missions?" dialog after recovery ──
+    Connections {
+        target: sarMissionManager || null
+        function onRecoveryMissionClearPrompt() {
+            QGroundControl.showMessageDialog(
+                _root,
+                qsTr("SAR Operation Complete"),
+                qsTr("All drones have returned and landed.\n\nRemove missions from all vehicles?"),
+                Dialog.Yes | Dialog.No,
+                function() { sarMissionManager.clearAllVehicleMissions() }
+            )
+        }
+    }
+
     // ── SAR Mode toggle button (prominent, visible when panel is hidden) ──
-    Rectangle {
+    Sadron.SadronGlassPanel {
         id:                     sarToggleBtn
         anchors.top:            parent.top
         anchors.left:           parent.left
@@ -451,11 +466,13 @@ Item {
         anchors.topMargin:      _toolsMargin
         width:                  sarToggleRow.width + ScreenTools.defaultFontPixelWidth * 2
         height:                 sarToggleRow.height + ScreenTools.defaultFontPixelHeight * 0.6
-        radius:                 ScreenTools.defaultFontPixelHeight * 0.3
-        color:                  "#e67e22"
-        border.color:           "white"
-        border.width:           1
-        visible:                !sarModeActive
+        padding:                ScreenTools.defaultFontPixelWidth
+        radius:                 height / 2
+        panelColor:             sarModeActive ? qgcPal.colorOrange : qgcPal.brandingPurple
+        panelOpacity:           sarModeActive ? 0.86 : 0.18
+        borderColor:            sarModeActive ? Qt.rgba(0.90, 0.49, 0.13, 0.9) : Qt.rgba(0.23, 0.51, 0.96, 0.8)
+        borderWidth:            1
+        scale:                  sarModeActive ? 1.02 : 1.0
 
         RowLayout {
             id:                 sarToggleRow
@@ -471,31 +488,39 @@ Item {
             }
 
             QGCLabel {
-                text:               qsTr("SAR Panel")
-                color:              "white"
+                text:               sarModeActive ? qsTr("SAR Active") : qsTr("SAR Panel")
+                color:              sarModeActive ? "white" : qgcPal.text
                 font.bold:          true
                 font.pointSize:     ScreenTools.defaultFontPointSize
             }
         }
 
+        SequentialAnimation on scale {
+            running: sarModeActive
+            loops: Animation.Infinite
+            NumberAnimation { from: 1.0; to: 1.03; duration: 900; easing.type: Easing.InOutQuad }
+            NumberAnimation { from: 1.03; to: 1.0; duration: 900; easing.type: Easing.InOutQuad }
+        }
+
         MouseArea {
             anchors.fill: parent
-            onClicked: sarModeActive = true
+            onClicked: sarModeActive = !sarModeActive
         }
     }
 
     // ── Telemetry Info Bar (speed, altitude, climb rate, distance) ──
-    Rectangle {
+    Sadron.SadronGlassPanel {
         id:                         telemetryBar
         height:                     telemetryBarRow.height + _toolsMargin
         width:                      telemetryBarRow.width + _toolsMargin * 4
         anchors.bottom:             compassBar.top
         anchors.bottomMargin:       _toolsMargin * 0.5
         anchors.horizontalCenter:   parent.horizontalCenter
-        radius:                     3
-        color:                      Qt.rgba(0, 0, 0, 0.6)
-        border.color:               Qt.rgba(1, 1, 1, 0.1)
-        border.width:               1
+        padding:                    ScreenTools.defaultFontPixelWidth
+        radius:                     ScreenTools.defaultFontPixelHeight * 0.5
+        panelColor:                 qgcPal.windowShadeDark
+        panelOpacity:               qgcPal.globalTheme === QGCPalette.Light ? 0.9 : 0.84
+        borderColor:                Qt.rgba(1, 1, 1, 0.08)
 
         Row {
             id:                 telemetryBarRow
@@ -670,15 +695,18 @@ Item {
         anchors.horizontalCenter:   parent.horizontalCenter
     }
 
-    Rectangle {
+    Sadron.SadronGlassPanel {
         id:                     compassBackground
         anchors.bottom:         attitudeIndicator.bottom
         anchors.right:          attitudeIndicator.left
         anchors.rightMargin:    -attitudeIndicator.width / 2
         width:                  -anchors.rightMargin + compassBezel.width + (_toolsMargin * 2)
         height:                 attitudeIndicator.height * 0.75
-        radius:                 2
-        color:                  qgcPal.window
+        padding:                0
+        radius:                 ScreenTools.defaultFontPixelHeight * 0.55
+        panelColor:             qgcPal.windowShadeDark
+        panelOpacity:           qgcPal.globalTheme === QGCPalette.Light ? 0.9 : 0.84
+        borderColor:            Qt.rgba(1, 1, 1, 0.08)
 
         Rectangle {
             id:                     compassBezel
@@ -733,7 +761,7 @@ Item {
         }
     }
 
-    Rectangle {
+    Sadron.SadronGlassPanel {
         id:                     attitudeIndicator
         anchors.bottomMargin:   _toolsMargin + parentToolInsets.bottomEdgeRightInset
         anchors.rightMargin:    _toolsMargin
@@ -741,8 +769,11 @@ Item {
         anchors.right:          parent.right
         height:                 ScreenTools.defaultFontPixelHeight * 6
         width:                  height
+        padding:                ScreenTools.defaultFontPixelHeight * 0.15
         radius:                 height * 0.5
-        color:                  qgcPal.windowShade
+        panelColor:             qgcPal.windowShadeDark
+        panelOpacity:           qgcPal.globalTheme === QGCPalette.Light ? 0.9 : 0.84
+        borderColor:            Qt.rgba(1, 1, 1, 0.08)
 
         CustomAttitudeWidget {
             size:               parent.height * 0.95

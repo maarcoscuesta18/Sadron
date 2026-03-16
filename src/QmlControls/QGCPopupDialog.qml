@@ -5,6 +5,7 @@ import QtQuick.Dialogs
 
 import QGroundControl
 import QGroundControl.Controls
+import "qrc:/custom/Sadron" as Sadron
 
 // Provides the standard dialog mechanism for QGC. Works 99% like Qml Dialog.
 //
@@ -66,13 +67,22 @@ Popup {
     property bool   _rejectAllowed:     rejectButton.visible
     property int    _previousValidationErrorCount: 0
 
-    background: QGCMouseArea {
+    background: Item {
         width:  mainWindow.width
         height: mainWindow.height
 
-        onClicked: {
-            if (closePolicy & Popup.CloseOnPressOutside) {
-                _reject()
+        Rectangle {
+            anchors.fill:   parent
+            color:          Qt.rgba(0, 0, 0, 0.6)
+        }
+
+        QGCMouseArea {
+            anchors.fill: parent
+
+            onClicked: {
+                if (closePolicy & Popup.CloseOnPressOutside) {
+                    _reject()
+                }
             }
         }
     }
@@ -198,15 +208,17 @@ Popup {
         acceptButton.enabled = false
     }
 
-    Rectangle {
+    Sadron.SadronGlassPanel {
         x:              mainLayout.x - _contentMargin
         y:              mainLayout.y - _contentMargin
         width:          mainLayout.width + _contentMargin * 2
         height:         mainLayout.height + _contentMargin * 2
-        color:          _qgcPal.windowShade
-        radius:         root.padding / 2
-        border.width:   1
-        border.color:   _qgcPal.windowShadeLight
+        padding:        0
+        radius:         ScreenTools.defaultFontPixelHeight * 0.5
+        panelColor:     _qgcPal.windowShadeDark
+        panelOpacity:   _qgcPal.globalTheme === QGCPalette.Light ? 0.96 : 0.88
+        borderColor:    Qt.rgba(1, 1, 1, _qgcPal.globalTheme === QGCPalette.Light ? 0.04 : 0.08)
+        borderWidth:    1
     }
 
     ColumnLayout {
@@ -225,7 +237,8 @@ Popup {
                 id:                 titleLabel
                 Layout.fillWidth:   true
                 text:               root.title
-                font.pointSize:     ScreenTools.mediumFontPointSize
+                font.pointSize:     ScreenTools.mediumFontPointSize * 1.05
+                font.bold:          true
                 verticalAlignment:	Text.AlignVCenter
             }
 
@@ -247,7 +260,8 @@ Popup {
             Layout.fillWidth:       true
             Layout.preferredWidth:  Math.min(maxAvailableWidth, totalContentWidth)
             Layout.preferredHeight: Math.min(maxAvailableHeight, totalContentHeight)
-            color:                  _qgcPal.window
+            color:                  Qt.rgba(_qgcPal.window.r, _qgcPal.window.g, _qgcPal.window.b, _qgcPal.globalTheme === QGCPalette.Light ? 0.92 : 0.82)
+            radius:                 ScreenTools.defaultFontPixelHeight * 0.4
 
             property real totalContentWidth:    dialogContentParent.childrenRect.width + _contentMargin * 2
             property real totalContentHeight:   dialogContentParent.childrenRect.height + _contentMargin * 2

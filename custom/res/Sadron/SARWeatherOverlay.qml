@@ -35,8 +35,14 @@ Item {
             property real direction:    vectorData ? vectorData.direction : 0
 
             // Convert geo coordinate to screen position via map
-            property var screenPos: mapControl ? mapControl.fromCoordinate(
-                QtPositioning.coordinate(lat, lon), false) : Qt.point(0, 0)
+            // Reference center + zoomLevel so QML re-evaluates on pan/zoom
+            property var screenPos: {
+                if (!mapControl) return Qt.point(0, 0)
+                var _c = mapControl.center
+                var _z = mapControl.zoomLevel
+                return mapControl.fromCoordinate(
+                    QtPositioning.coordinate(lat, lon), false)
+            }
 
             x:       screenPos.x - width / 2
             y:       screenPos.y - height / 2

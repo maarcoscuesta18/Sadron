@@ -19,6 +19,7 @@ class SARZoneManager;
 class SARTargetManager;
 class SARCoverageTracker;
 class SARReTaskingManager;
+class SARModeManager;
 class MeshNetworkManager;
 class EnvironmentalDataProvider;
 class VehicleCoordinator;
@@ -115,6 +116,7 @@ public:
     MeshNetworkManager  *meshNetworkManager() const { return _meshNetworkManager; }
     EnvironmentalDataProvider *environmentalDataProvider() const { return _environmentalDataProvider; }
     VehicleCoordinator *vehicleCoordinator() const { return _vehicleCoordinator; }
+    SARModeManager *sarModeManager() const { return _sarModeManager; }
 
 private slots:
     void _advancedChanged(bool advanced);
@@ -143,6 +145,7 @@ private:
     MeshNetworkManager  *_meshNetworkManager = nullptr;
     EnvironmentalDataProvider *_environmentalDataProvider = nullptr;
     VehicleCoordinator *_vehicleCoordinator = nullptr;
+    SARModeManager *_sarModeManager = nullptr;
 };
 
 /*===========================================================================*/

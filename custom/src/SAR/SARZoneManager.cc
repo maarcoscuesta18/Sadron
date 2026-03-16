@@ -21,6 +21,77 @@
 
 QGC_LOGGING_CATEGORY(SARZoneManagerLog, "Sadron.SARZoneManager")
 
+namespace {
+
+constexpr double kPolygonEpsilon = 1e-12;
+
+double _cross2d(const QGeoCoordinate &a, const QGeoCoordinate &b, const QGeoCoordinate &c)
+{
+    return (b.longitude() - a.longitude()) * (c.latitude() - a.latitude())
+         - (b.latitude() - a.latitude()) * (c.longitude() - a.longitude());
+}
+
+bool _onSegment(const QGeoCoordinate &a, const QGeoCoordinate &b, const QGeoCoordinate &c)
+{
+    return b.longitude() <= qMax(a.longitude(), c.longitude()) + kPolygonEpsilon
+        && b.longitude() >= qMin(a.longitude(), c.longitude()) - kPolygonEpsilon
+        && b.latitude() <= qMax(a.latitude(), c.latitude()) + kPolygonEpsilon
+        && b.latitude() >= qMin(a.latitude(), c.latitude()) - kPolygonEpsilon;
+}
+
+bool _segmentsIntersect(const QGeoCoordinate &a1, const QGeoCoordinate &a2,
+                        const QGeoCoordinate &b1, const QGeoCoordinate &b2)
+{
+    const double o1 = _cross2d(a1, a2, b1);
+    const double o2 = _cross2d(a1, a2, b2);
+    const double o3 = _cross2d(b1, b2, a1);
+    const double o4 = _cross2d(b1, b2, a2);
+
+    if (((o1 > kPolygonEpsilon && o2 < -kPolygonEpsilon) || (o1 < -kPolygonEpsilon && o2 > kPolygonEpsilon))
+        && ((o3 > kPolygonEpsilon && o4 < -kPolygonEpsilon) || (o3 < -kPolygonEpsilon && o4 > kPolygonEpsilon))) {
+        return true;
+    }
+
+    if (std::abs(o1) <= kPolygonEpsilon && _onSegment(a1, b1, a2)) return true;
+    if (std::abs(o2) <= kPolygonEpsilon && _onSegment(a1, b2, a2)) return true;
+    if (std::abs(o3) <= kPolygonEpsilon && _onSegment(b1, a1, b2)) return true;
+    if (std::abs(o4) <= kPolygonEpsilon && _onSegment(b1, a2, b2)) return true;
+
+    return false;
+}
+
+bool _isSimplePolygon(const QVariantList &polygon)
+{
+    if (polygon.size() < 3) {
+        return false;
+    }
+
+    const int edgeCount = polygon.size();
+    for (int first = 0; first < edgeCount; ++first) {
+        const QGeoCoordinate a1 = polygon[first].value<QGeoCoordinate>();
+        const QGeoCoordinate a2 = polygon[(first + 1) % edgeCount].value<QGeoCoordinate>();
+        for (int second = first + 1; second < edgeCount; ++second) {
+            const bool sharesVertex =
+                first == second
+                || ((first + 1) % edgeCount) == second
+                || (first == ((second + 1) % edgeCount));
+            if (sharesVertex) {
+                continue;
+            }
+
+            const QGeoCoordinate b1 = polygon[second].value<QGeoCoordinate>();
+            const QGeoCoordinate b2 = polygon[(second + 1) % edgeCount].value<QGeoCoordinate>();
+            if (_segmentsIntersect(a1, a2, b1, b2)) {
+                return false;
+            }
+        }
+    }
+
+    return true;
+}
+
+} // namespace
+
 /*===========================================================================*/
 // SARZone
 /*===========================================================================*/
@@ -44,23 +115,24 @@ double SARZone::areaSqM() const
     const QVariantList poly = _mapPolygon->path();
     if (poly.size() < 3) return 0.0;
 
-    // Shoelace formula on projected coordinates
+    const QGeoCoordinate origin = poly[0].value<QGeoCoordinate>();
+    const double mPerDegLat = 111320.0;
+    const double mPerDegLon = 111320.0 * std::cos(origin.latitude() * M_PI / 180.0);
+
     double area = 0.0;
     const int n = poly.size();
     for (int i = 0; i < n; i++) {
         const QGeoCoordinate c1 = poly[i].value<QGeoCoordinate>();
         const QGeoCoordinate c2 = poly[(i + 1) % n].value<QGeoCoordinate>();
 
-        // Convert to meters relative to first point
-        const QGeoCoordinate origin = poly[0].value<QGeoCoordinate>();
-        const double x1 = origin.distanceTo(QGeoCoordinate(origin.latitude(), c1.longitude()));
-        const double y1 = origin.distanceTo(QGeoCoordinate(c1.latitude(), origin.longitude()));
-        const double x2 = origin.distanceTo(QGeoCoordinate(origin.latitude(), c2.longitude()));
-        const double y2 = origin.distanceTo(QGeoCoordinate(c2.latitude(), origin.longitude()));
+        const double x1 = (c1.longitude() - origin.longitude()) * mPerDegLon;
+        const double y1 = (c1.latitude() - origin.latitude()) * mPerDegLat;
+        const double x2 = (c2.longitude() - origin.longitude()) * mPerDegLon;
+        const double y2 = (c2.latitude() - origin.latitude()) * mPerDegLat;
 
         area += (x1 * y2 - x2 * y1);
     }
-    return std::abs(area) / 2.0;
+    return std::abs(area) * 0.5;
 }
 
 QColor SARZone::displayColor() const
@@ -358,7 +430,7 @@ void SARZoneManager::assignZoneToVehicle(int zoneId, int vehicleId)
         auto *zone = qobject_cast<SARZone *>(_zones->get(i));
         if (zone && zone->zoneId() == zoneId) {
             zone->setAssignedVehicle(vehicleId);
-            zone->setStatus(SARZone::Active);
+            zone->setStatus(SARZone::Pending);
             _zoneAssignmentGen++;
             emit zoneAssignmentChanged();
             emit zoneAssigned(zoneId, vehicleId);
@@ -374,7 +446,6 @@ void SARZoneManager::reassignZone(int zoneId, int newVehicleId)
         if (zone && zone->zoneId() == zoneId) {
             zone->setStatus(SARZone::Reassigning);
             zone->setAssignedVehicle(newVehicleId);
-            zone->setStatus(SARZone::Active);
             _zoneAssignmentGen++;
             emit zoneAssignmentChanged();
             emit zoneAssigned(zoneId, newVehicleId);
@@ -691,6 +762,11 @@ static void _splitAtLat(const QVariantList &poly, double splitLat,
             below.append(QVariant::fromValue(ix));
         }
     }
+
+    if (!_isSimplePolygon(above) || !_isSimplePolygon(below)) {
+        above.clear();
+        below.clear();
+    }
 }
 
 // Split a polygon into two halves at the given longitude line.
@@ -720,6 +796,11 @@ static void _splitAtLon(const QVariantList &poly, double splitLon,
             left.append(QVariant::fromValue(ix));
             right.append(QVariant::fromValue(ix));
         }
+    }
+
+    if (!_isSimplePolygon(left) || !_isSimplePolygon(right)) {
+        left.clear();
+        right.clear();
     }
 }
 
@@ -901,7 +982,7 @@ void SARZoneManager::_partitionVoronoi(const QVariantList &boundary, int count)
         QmlObjectListModel *vehicles = mvm->vehicles();
         for (int i = 0; i < vehicles->count() && seeds.size() < count; i++) {
             auto *v = qobject_cast<Vehicle *>(vehicles->get(i));
-            if (v && v->coordinate().isValid()) {
+            if (v && v->coordinate().isValid() && _pointInPolygon(v->coordinate(), boundary)) {
                 seeds.append(v->coordinate());
             }
         }
@@ -936,16 +1017,26 @@ void SARZoneManager::_partitionVoronoi(const QVariantList &boundary, int count)
             }
         }
 
-        // If still not enough, add jittered points near the centroid
-        double jitter = 0.001; // ~100m
-        while (seeds.size() < count) {
-            int idx = seeds.size();
-            double angle = (2.0 * M_PI * idx) / remaining;
-            QGeoCoordinate pt(
-                center.latitude()  + jitter * std::cos(angle),
-                center.longitude() + jitter * std::sin(angle));
-            seeds.append(pt);
-            jitter += 0.0005;
+        // If still not enough, fall back to deterministic samples inside the
+        // bounding box instead of unconstrained centroid jitter.
+        if (seeds.size() < count) {
+            QGeoRectangle bounds = _boundingRect(boundary);
+            const double latSpan = bounds.topLeft().latitude() - bounds.bottomRight().latitude();
+            const double lonSpan = bounds.bottomRight().longitude() - bounds.topLeft().longitude();
+
+            int attempt = 0;
+            while (seeds.size() < count && attempt < count * 100) {
+                const double latFrac = static_cast<double>(((attempt * 37) % 97) + 1) / 98.0;
+                const double lonFrac = static_cast<double>(((attempt * 53) % 89) + 1) / 90.0;
+                const QGeoCoordinate candidate(
+                    bounds.topLeft().latitude() - (latSpan * latFrac),
+                    bounds.topLeft().longitude() + (lonSpan * lonFrac));
+
+                if (_pointInPolygon(candidate, boundary)) {
+                    seeds.append(candidate);
+                }
+                ++attempt;
+            }
         }
     }
 

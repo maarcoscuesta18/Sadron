@@ -12,7 +12,7 @@ class QNetworkReply;
 Q_DECLARE_LOGGING_CATEGORY(EnvironmentalDataLog)
 
 /// Centralized provider for environmental data overlays:
-///  - Real-time weather (OpenWeatherMap): wind vectors, precipitation, conditions
+///  - Real-time weather (Open-Meteo): wind vectors, precipitation, conditions
 ///  - Terrain slope analysis (Copernicus elevation → Sobel gradient)
 ///  - Hydrological data (OpenStreetMap Overpass): water features
 class EnvironmentalDataProvider : public QObject
@@ -33,8 +33,6 @@ class EnvironmentalDataProvider : public QObject
     Q_PROPERTY(QString weatherDescription    READ weatherDescription    NOTIFY weatherChanged)
     Q_PROPERTY(QString weatherIcon           READ weatherIcon           NOTIFY weatherChanged)
     Q_PROPERTY(QVariantList windVectors      READ windVectors           NOTIFY windVectorsChanged)
-    Q_PROPERTY(QString precipTileUrlTemplate READ precipTileUrlTemplate NOTIFY weatherChanged)
-    Q_PROPERTY(QString apiKey                READ apiKey                WRITE setApiKey NOTIFY apiKeyChanged)
     Q_PROPERTY(int     weatherRefreshSecs    READ weatherRefreshSecs    WRITE setWeatherRefreshSecs NOTIFY weatherRefreshSecsChanged)
 
     // ── Terrain slope properties ──
@@ -72,11 +70,8 @@ public:
     QString weatherDescription() const { return _weatherDescription; }
     QString weatherIcon() const { return _weatherIcon; }
     QVariantList windVectors() const { return _windVectors; }
-    QString precipTileUrlTemplate() const;
-    QString apiKey() const { return _apiKey; }
     int     weatherRefreshSecs() const { return _weatherRefreshSecs; }
 
-    void setApiKey(const QString &key);
     void setWeatherRefreshSecs(int secs);
 
     // ── Terrain slope getters ──
@@ -108,7 +103,6 @@ signals:
     void weatherChanged();
     void weatherLoadingChanged();
     void windVectorsChanged();
-    void apiKeyChanged();
     void weatherRefreshSecsChanged();
     void slopeDataChanged();
     void slopeLoadingChanged();
@@ -154,7 +148,6 @@ private:
     QString _weatherDescription;
     QString _weatherIcon;
     QVariantList _windVectors;
-    QString _apiKey;
     int     _weatherRefreshSecs = 300; // 5 min default
 
     // ── Auto-refresh ──

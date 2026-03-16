@@ -52,13 +52,20 @@ Item {
             property real aspect:    cellData ? cellData.aspect    : 0
             property real elevation: cellData ? cellData.elevation : 0
 
-            property var screenPos: mapControl ? mapControl.fromCoordinate(
-                QtPositioning.coordinate(lat, lon), false) : Qt.point(0, 0)
+            // Reference center + zoomLevel so QML re-evaluates on pan/zoom
+            property var screenPos: {
+                if (!mapControl) return Qt.point(0, 0)
+                var _c = mapControl.center
+                var _z = mapControl.zoomLevel
+                return mapControl.fromCoordinate(
+                    QtPositioning.coordinate(lat, lon), false)
+            }
 
             // Cell size depends on the grid density and zoom level
             // Use a neighboring cell to compute pixel spacing
             property real cellPixelSize: {
                 if (!mapControl || !environmentalDataProvider) return 8
+                var _z = mapControl.zoomLevel  // force re-eval on zoom
                 var rows = environmentalDataProvider.slopeRows
                 var cols = environmentalDataProvider.slopeCols
                 if (rows < 2 || cols < 2) return 8

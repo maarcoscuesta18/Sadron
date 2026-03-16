@@ -4,6 +4,7 @@ import QtQuick.Layouts
 
 import QGroundControl
 import QGroundControl.Controls
+import "qrc:/custom/Sadron" as Sadron
 
 // ============================================================================
 // CoordinationStatusPanel — Multi-vehicle coordination status and settings
@@ -15,10 +16,13 @@ Item {
 
     property real _margin: ScreenTools.defaultFontPixelWidth * 0.5
 
-    Rectangle {
+    Sadron.SadronGlassPanel {
         anchors.fill:   parent
-        radius:         ScreenTools.defaultFontPixelHeight * 0.25
-        color:          Qt.rgba(0, 0, 0, 0.7)
+        padding:        0
+        radius:         ScreenTools.defaultFontPixelHeight * 0.5
+        panelColor:     QGroundControl.globalPalette.windowShadeDark
+        panelOpacity:   QGroundControl.globalPalette.globalTheme === QGCPalette.Light ? 0.92 : 0.86
+        borderColor:    Qt.rgba(1, 1, 1, 0.08)
 
         ColumnLayout {
             anchors.fill:       parent
@@ -31,7 +35,7 @@ Item {
 
                 QGCLabel {
                     text:               "Coordination"
-                    color:              "#e67e22"
+                    color:              QGroundControl.globalPalette.brandingPurple
                     font.bold:          true
                     Layout.fillWidth:   true
                 }

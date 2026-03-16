@@ -15,6 +15,7 @@
 #include "SAR/SARCoverageTracker.h"
 #include "SAR/SARReTaskingManager.h"
 #include "SAR/VehicleCoordinator.h"
+#include "SAR/SARModeManager.h"
 #include "Mesh/MeshNetworkManager.h"
 #include "Environmental/EnvironmentalDataProvider.h"
 
@@ -70,6 +71,7 @@ SadronPlugin::SadronPlugin(QObject *parent)
 
 SadronPlugin::~SadronPlugin()
 {
+    delete _sarModeManager;
     delete _vehicleCoordinator;
     delete _sarReTaskingManager;
     delete _sarMissionManager;
@@ -116,6 +118,11 @@ void SadronPlugin::init()
     _vehicleCoordinator = new VehicleCoordinator(
         _sarMissionManager, _sarZoneManager, _sarTargetManager,
         _sarReTaskingManager, _sarCoverageTracker, _meshNetworkManager, this);
+
+    // Disaster mode manager — orchestrates profile presets across all subsystems
+    _sarModeManager = new SARModeManager(
+        _sarMissionManager, _sarZoneManager, _sarCoverageTracker,
+        _sarReTaskingManager, _vehicleCoordinator, this);
 
     // Coverage update debounce timer — avoids per-cell QML thrashing
     _coverageUpdateTimer = new QTimer(this);
@@ -175,8 +182,8 @@ void SadronPlugin::_updateZoneProgress()
         SARZone *zone = qobject_cast<SARZone *>(zones->get(i));
         if (!zone) continue;
 
-        double pct = _sarCoverageTracker->coverageForZone(zone->polygon());
-        zone->setProgress(pct / 100.0);
+        double ratio = _sarCoverageTracker->coverageForZone(zone->polygon());
+        zone->setProgress(ratio);
     }
 
     _sarZoneManager->notifyProgressChanged();
@@ -266,6 +273,9 @@ void SadronPlugin::postSaveToJson(PlanMasterController *pController, QJsonObject
     if (_vehicleCoordinator) {
         sarData["coordination"] = _vehicleCoordinator->settingsToJson();
     }
+    if (_sarModeManager) {
+        sarData["disasterMode"] = _sarModeManager->settingsToJson();
+    }
     json["sadronSAR"] = sarData;
 }
 
@@ -287,59 +297,140 @@ void SadronPlugin::postLoadFromJson(PlanMasterController *pController, QJsonObje
         if (_vehicleCoordinator && sarData.contains("coordination")) {
             _vehicleCoordinator->settingsFromJson(sarData["coordination"].toObject());
         }
+        if (_sarModeManager && sarData.contains("disasterMode")) {
+            _sarModeManager->settingsFromJson(sarData["disasterMode"].toObject());
+        }
     }
 }
 
 // SAR-specific color palette: high-contrast for field operations
 void SadronPlugin::paletteOverride(const QString &colorName, QGCPalette::PaletteColorInfo_t &colorInfo)
 {
-    // Dark theme optimized for outdoor/field use with high contrast
     if (colorName == QStringLiteral("window")) {
-        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupEnabled]   = QColor("#1a1a2e");
-        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupDisabled]  = QColor("#1a1a2e");
-        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupEnabled]  = QColor("#f0f0f5");
-        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupDisabled] = QColor("#e8e8ed");
+        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupEnabled]   = QColor("#0d1117");
+        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupDisabled]  = QColor("#0d1117");
+        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupEnabled]  = QColor("#f6f8fa");
+        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupDisabled] = QColor("#eef2f6");
     } else if (colorName == QStringLiteral("windowShade")) {
-        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupEnabled]   = QColor("#16213e");
-        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupDisabled]  = QColor("#16213e");
-        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupEnabled]  = QColor("#e4e4eb");
-        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupDisabled] = QColor("#d0d0d8");
-    } else if (colorName == QStringLiteral("windowShadeDark")) {
-        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupEnabled]   = QColor("#0f0f23");
-        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupDisabled]  = QColor("#0f0f23");
-        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupEnabled]  = QColor("#d8d8e0");
-        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupDisabled] = QColor("#b8b8c0");
-    } else if (colorName == QStringLiteral("text")) {
-        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupEnabled]   = QColor("#e8e8e8");
-        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupDisabled]  = QColor("#686878");
-        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupEnabled]  = QColor("#1a1a2e");
-        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupDisabled] = QColor("#909098");
-    } else if (colorName == QStringLiteral("warningText")) {
-        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupEnabled]   = QColor("#ff4444");
-        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupDisabled]  = QColor("#ff4444");
-        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupEnabled]  = QColor("#cc0000");
-        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupDisabled] = QColor("#cc0000");
-    } else if (colorName == QStringLiteral("button")) {
-        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupEnabled]   = QColor("#2a2a4a");
-        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupDisabled]  = QColor("#2a2a4a");
+        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupEnabled]   = QColor("#161b22");
+        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupDisabled]  = QColor("#161b22");
         colorInfo[QGCPalette::Light][QGCPalette::ColorGroupEnabled]  = QColor("#ffffff");
-        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupDisabled] = QColor("#f0f0f0");
+        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupDisabled] = QColor("#f3f4f6");
+    } else if (colorName == QStringLiteral("windowShadeDark")) {
+        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupEnabled]   = QColor("#010409");
+        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupDisabled]  = QColor("#010409");
+        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupEnabled]  = QColor("#d8dee4");
+        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupDisabled] = QColor("#c7d0da");
+    } else if (colorName == QStringLiteral("windowShadeLight")) {
+        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupEnabled]   = QColor("#30363d");
+        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupDisabled]  = QColor("#30363d");
+        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupEnabled]  = QColor("#d0d7de");
+        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupDisabled] = QColor("#b8c0ca");
+    } else if (colorName == QStringLiteral("windowTransparent")) {
+        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupEnabled]   = QColor("#cc0d1117");
+        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupDisabled]  = QColor("#cc0d1117");
+        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupEnabled]  = QColor("#d9ffffff");
+        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupDisabled] = QColor("#d9f6f8fa");
+    } else if (colorName == QStringLiteral("text")) {
+        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupEnabled]   = QColor("#e6edf3");
+        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupDisabled]  = QColor("#484f58");
+        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupEnabled]  = QColor("#0f172a");
+        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupDisabled] = QColor("#6b7280");
+    } else if (colorName == QStringLiteral("windowTransparentText")) {
+        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupEnabled]   = QColor("#e6edf3");
+        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupDisabled]  = QColor("#8b949e");
+        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupEnabled]  = QColor("#0f172a");
+        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupDisabled] = QColor("#64748b");
+    } else if (colorName == QStringLiteral("warningText")) {
+        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupEnabled]   = QColor("#e74c3c");
+        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupDisabled]  = QColor("#e74c3c");
+        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupEnabled]  = QColor("#dc2626");
+        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupDisabled] = QColor("#dc2626");
+    } else if (colorName == QStringLiteral("button")) {
+        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupEnabled]   = QColor("#21262d");
+        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupDisabled]  = QColor("#1a1f24");
+        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupEnabled]  = QColor("#ffffff");
+        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupDisabled] = QColor("#f3f4f6");
+    } else if (colorName == QStringLiteral("buttonBorder")) {
+        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupEnabled]   = QColor("#30363d");
+        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupDisabled]  = QColor("#30363d");
+        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupEnabled]  = QColor("#d0d7de");
+        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupDisabled] = QColor("#d0d7de");
+    } else if (colorName == QStringLiteral("buttonText")) {
+        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupEnabled]   = QColor("#c9d1d9");
+        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupDisabled]  = QColor("#6e7681");
+        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupEnabled]  = QColor("#1f2937");
+        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupDisabled] = QColor("#94a3b8");
     } else if (colorName == QStringLiteral("buttonHighlight")) {
-        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupEnabled]   = QColor("#e67e22");
-        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupDisabled]  = QColor("#2a2a4a");
-        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupEnabled]  = QColor("#f39c12");
-        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupDisabled] = QColor("#d0d0d0");
+        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupEnabled]   = QColor("#3B82F6");
+        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupDisabled]  = QColor("#475569");
+        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupEnabled]  = QColor("#3B82F6");
+        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupDisabled] = QColor("#93c5fd");
+    } else if (colorName == QStringLiteral("buttonHighlightText")) {
+        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupEnabled]   = QColor("#ffffff");
+        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupDisabled]  = QColor("#e5e7eb");
+        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupEnabled]  = QColor("#ffffff");
+        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupDisabled] = QColor("#eff6ff");
     } else if (colorName == QStringLiteral("primaryButton")) {
-        // SAR orange - high visibility, standard SAR color
-        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupEnabled]   = QColor("#e67e22");
-        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupDisabled]  = QColor("#2a2a4a");
-        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupEnabled]  = QColor("#e67e22");
-        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupDisabled] = QColor("#888888");
+        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupEnabled]   = QColor("#3B82F6");
+        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupDisabled]  = QColor("#334155");
+        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupEnabled]  = QColor("#3B82F6");
+        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupDisabled] = QColor("#93c5fd");
     } else if (colorName == QStringLiteral("primaryButtonText")) {
         colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupEnabled]   = QColor("#ffffff");
-        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupDisabled]  = QColor("#aaaaaa");
+        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupDisabled]  = QColor("#e5e7eb");
         colorInfo[QGCPalette::Light][QGCPalette::ColorGroupEnabled]  = QColor("#ffffff");
-        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupDisabled] = QColor("#cccccc");
+        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupDisabled] = QColor("#eff6ff");
+    } else if (colorName == QStringLiteral("textField")) {
+        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupEnabled]   = QColor("#0d1117");
+        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupDisabled]  = QColor("#161b22");
+        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupEnabled]  = QColor("#ffffff");
+        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupDisabled] = QColor("#f8fafc");
+    } else if (colorName == QStringLiteral("textFieldText")) {
+        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupEnabled]   = QColor("#c9d1d9");
+        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupDisabled]  = QColor("#6e7681");
+        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupEnabled]  = QColor("#1f2937");
+        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupDisabled] = QColor("#6b7280");
+    } else if (colorName == QStringLiteral("toolbarBackground")) {
+        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupEnabled]   = QColor("#00000000");
+        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupDisabled]  = QColor("#00000000");
+        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupEnabled]  = QColor("#00000000");
+        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupDisabled] = QColor("#00000000");
+    } else if (colorName == QStringLiteral("brandingPurple")) {
+        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupEnabled]   = QColor("#3B82F6");
+        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupDisabled]  = QColor("#3B82F6");
+        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupEnabled]  = QColor("#3B82F6");
+        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupDisabled] = QColor("#3B82F6");
+    } else if (colorName == QStringLiteral("groupBorder")) {
+        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupEnabled]   = QColor("#30363d");
+        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupDisabled]  = QColor("#30363d");
+        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupEnabled]  = QColor("#d0d7de");
+        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupDisabled] = QColor("#c7d2da");
+    } else if (colorName == QStringLiteral("missionItemEditor")) {
+        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupEnabled]   = QColor("#161b22");
+        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupDisabled]  = QColor("#161b22");
+        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupEnabled]  = QColor("#ffffff");
+        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupDisabled] = QColor("#f8fafc");
+    } else if (colorName == QStringLiteral("toolStripHoverColor")) {
+        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupEnabled]   = QColor("#1f2937");
+        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupDisabled]  = QColor("#1f2937");
+        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupEnabled]  = QColor("#e5e7eb");
+        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupDisabled] = QColor("#e2e8f0");
+    } else if (colorName == QStringLiteral("alertBackground")) {
+        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupEnabled]   = QColor("#1c1917");
+        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupDisabled]  = QColor("#1c1917");
+        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupEnabled]  = QColor("#fff7ed");
+        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupDisabled] = QColor("#ffedd5");
+    } else if (colorName == QStringLiteral("alertBorder")) {
+        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupEnabled]   = QColor("#e67e22");
+        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupDisabled]  = QColor("#e67e22");
+        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupEnabled]  = QColor("#e67e22");
+        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupDisabled] = QColor("#d97706");
+    } else if (colorName == QStringLiteral("alertText")) {
+        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupEnabled]   = QColor("#e6edf3");
+        colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupDisabled]  = QColor("#e6edf3");
+        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupEnabled]  = QColor("#9a3412");
+        colorInfo[QGCPalette::Light][QGCPalette::ColorGroupDisabled] = QColor("#9a3412");
     } else if (colorName == QStringLiteral("colorGreen")) {
         // Searched/clear areas
         colorInfo[QGCPalette::Dark][QGCPalette::ColorGroupEnabled]   = QColor("#2ecc71");
@@ -385,6 +476,7 @@ QQmlApplicationEngine *SadronPlugin::createQmlApplicationEngine(QObject *parent)
     context->setContextProperty("meshNetworkManager", _meshNetworkManager);
     context->setContextProperty("environmentalDataProvider", _environmentalDataProvider);
     context->setContextProperty("vehicleCoordinator", _vehicleCoordinator);
+    context->setContextProperty("sarModeManager", _sarModeManager);
 
     _selector = new SadronOverrideInterceptor();
     _qmlEngine->addUrlInterceptor(_selector);

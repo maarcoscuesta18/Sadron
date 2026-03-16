@@ -4,6 +4,22 @@
 
 QGC_LOGGING_CATEGORY(SARTargetManagerLog, "Sadron.SARTargetManager")
 
+namespace {
+
+void _connectTargetStatusRelay(SARTargetManager *manager, SARTarget *target)
+{
+    if (!manager || !target) {
+        return;
+    }
+
+    QObject::connect(target, &SARTarget::statusChanged, manager,
+                     [manager, target]() {
+                         emit manager->targetStatusChanged(target->targetId(), static_cast<int>(target->status()));
+                     });
+}
+
+} // namespace
+
 /*===========================================================================*/
 // SARTarget
 /*===========================================================================*/
@@ -92,6 +108,7 @@ SARTarget *SARTargetManager::addTarget(const QGeoCoordinate &coordinate, const Q
     target->setCoordinate(coordinate);
     if (!description.isEmpty()) target->setDescription(description);
     if (vehicleId >= 0) target->setSpottedByVehicle(vehicleId);
+    _connectTargetStatusRelay(this, target);
     _targets->append(target);
 
     qCDebug(SARTargetManagerLog) << "Target added:" << target->targetId() << "at" << coordinate;
@@ -165,6 +182,7 @@ void SARTargetManager::fromJson(const QJsonArray &json)
     for (const QJsonValue &v : json) {
         auto *target = SARTarget::fromJson(v.toObject(), this);
         if (target) {
+            _connectTargetStatusRelay(this, target);
             _targets->append(target);
             if (target->targetId() >= _nextTargetId) {
                 _nextTargetId = target->targetId() + 1;

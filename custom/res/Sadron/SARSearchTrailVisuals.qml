@@ -31,70 +31,33 @@ Item {
         return _trailColors[vehicle.id % _trailColors.length]
     }
 
-    // ── Swath lines (wide, semi-transparent) ──
+    // Single Instantiator: swath line + trail line + vehicle badge per vehicle
     Instantiator {
         model:  (_root.mapControl) ? QGroundControl.multiVehicleManager.vehicles : null
         active: _root.mapControl !== null && _root.mapControl !== undefined
 
         delegate: Item {
-            property var    _vehicle:   object
-            property color  _color:     _colorForVehicle(_vehicle)
-            property var    _path:      []
+            property var    _vehicle:    object
+            property color  _color:      _colorForVehicle(_vehicle)
+            property int    _pointCount: 0
 
+            // Wide semi-transparent swath (camera coverage approximation)
             MapPolyline {
                 id:         swathLine
                 parent:     _root.mapControl
-                visible:    _root.showTrails && _path.length > 1
+                visible:    _root.showTrails && _pointCount > 1
                 line.width: 14
                 line.color: Qt.rgba(_color.r, _color.g, _color.b, 0.25)
-                path:       _path
                 z:          QGroundControl.zOrderTrajectoryLines - 1
             }
 
-            Connections {
-                target: _vehicle.trajectoryPoints
-                function onPointAdded(coordinate) {
-                    _path.push(coordinate)
-                    _path = _path  // trigger binding update
-                }
-                function onUpdateLastPoint(coordinate) {
-                    if (_path.length > 0) {
-                        _path[_path.length - 1] = coordinate
-                        _path = _path
-                    }
-                }
-                function onPointsCleared() {
-                    _path = []
-                }
-            }
-
-            Component.onCompleted: {
-                _path = _vehicle.trajectoryPoints.list()
-                parent = _root
-            }
-            Component.onDestruction: {
-                swathLine.parent = null
-            }
-        }
-    }
-
-    // ── Trail lines (thin, solid) + vehicle label badges ──
-    Instantiator {
-        model:  (_root.mapControl) ? QGroundControl.multiVehicleManager.vehicles : null
-        active: _root.mapControl !== null && _root.mapControl !== undefined
-
-        delegate: Item {
-            property var    _vehicle:   object
-            property color  _color:     _colorForVehicle(_vehicle)
-            property var    _path:      []
-
+            // Thin solid trail (exact flight path)
             MapPolyline {
                 id:         trailLine
                 parent:     _root.mapControl
-                visible:    _root.showTrails && _path.length > 1
+                visible:    _root.showTrails && _pointCount > 1
                 line.width: 3
                 line.color: _color
-                path:       _path
                 z:          QGroundControl.zOrderTrajectoryLines
             }
 
@@ -129,28 +92,55 @@ Item {
                 }
             }
 
+            // Use native MapPolyline methods (matching FlyViewMap.qml pattern)
             Connections {
                 target: _vehicle.trajectoryPoints
                 function onPointAdded(coordinate) {
-                    _path.push(coordinate)
-                    _path = _path
+                    swathLine.addCoordinate(coordinate)
+                    trailLine.addCoordinate(coordinate)
+                    _pointCount++
                 }
                 function onUpdateLastPoint(coordinate) {
-                    if (_path.length > 0) {
-                        _path[_path.length - 1] = coordinate
-                        _path = _path
+                    if (_pointCount > 0) {
+                        swathLine.replaceCoordinate(swathLine.pathLength() - 1, coordinate)
+                        trailLine.replaceCoordinate(trailLine.pathLength() - 1, coordinate)
                     }
                 }
                 function onPointsCleared() {
-                    _path = []
+                    swathLine.path = []
+                    trailLine.path = []
+                    _pointCount = 0
                 }
             }
 
+            // Load existing trajectory points after a short delay so the map
+            // has time to fully initialize its plugin/renderer.  Without this,
+            // polylines added during map creation may not render until a
+            // view switch forces re-creation.
+            function _loadExistingPoints() {
+                swathLine.path = []
+                trailLine.path = []
+                var pts = _vehicle.trajectoryPoints.list()
+                for (var i = 0; i < pts.length; i++) {
+                    swathLine.addCoordinate(pts[i])
+                    trailLine.addCoordinate(pts[i])
+                }
+                _pointCount = pts.length
+            }
+
+            Timer {
+                id:       initTimer
+                interval: 100
+                repeat:   false
+                onTriggered: _loadExistingPoints()
+            }
+
             Component.onCompleted: {
-                _path = _vehicle.trajectoryPoints.list()
                 parent = _root
+                initTimer.start()
             }
             Component.onDestruction: {
+                swathLine.parent = null
                 trailLine.parent = null
                 vehicleLabel.parent = null
             }
