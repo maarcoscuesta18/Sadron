@@ -19,75 +19,65 @@ Item {
 
     QGCPalette { id: qgcPal; colorGroupEnabled: true }
 
-    // ── Wind Vector Arrows on Map ──
-    // Each vector is an arrow icon positioned at a geo coordinate, rotated by wind direction
+    // 3D: Wind Vector Arrows on Map — use MapQuickItem for native coordinate handling
+    // This avoids per-item fromCoordinate() calls that fire on every pan/zoom.
     Repeater {
         id: windVectorRepeater
         model: environmentalDataProvider ? environmentalDataProvider.windVectors : []
 
-        Item {
-            id: windArrowDelegate
+        MapQuickItem {
+            parent:     mapControl
+            coordinate: QtPositioning.coordinate(
+                            modelData ? modelData.latitude  : 0,
+                            modelData ? modelData.longitude : 0)
+            anchorPoint.x: _arrowSize / 2
+            anchorPoint.y: _arrowSize / 2
 
-            property var  vectorData:   modelData
-            property real lat:          vectorData ? vectorData.latitude  : 0
-            property real lon:          vectorData ? vectorData.longitude : 0
-            property real speed:        vectorData ? vectorData.speed     : 0
-            property real direction:    vectorData ? vectorData.direction : 0
-
-            // Convert geo coordinate to screen position via map
-            // Reference center + zoomLevel so QML re-evaluates on pan/zoom
-            property var screenPos: {
-                if (!mapControl) return Qt.point(0, 0)
-                var _c = mapControl.center
-                var _z = mapControl.zoomLevel
-                return mapControl.fromCoordinate(
-                    QtPositioning.coordinate(lat, lon), false)
-            }
-
-            x:       screenPos.x - width / 2
-            y:       screenPos.y - height / 2
-            width:   arrowSize
-            height:  arrowSize
-            visible: mapControl !== null && screenPos.x > 0 && screenPos.y > 0
+            property real _speed:     modelData ? modelData.speed     : 0
+            property real _direction: modelData ? modelData.direction : 0
 
             // Arrow size scales with wind speed (min 20, max 48)
-            property real arrowSize: Math.max(20, Math.min(48, 16 + speed * 3))
+            property real _arrowSize: Math.max(20, Math.min(48, 16 + _speed * 3))
 
             // Arrow color: light wind = cyan, moderate = yellow, strong = red
-            property color arrowColor: {
-                if (speed < 3)  return "#00bcd4"    // Light — cyan
-                if (speed < 8)  return "#4caf50"    // Moderate — green
-                if (speed < 15) return "#ff9800"    // Strong — orange
-                return "#f44336"                     // Severe — red
+            property color _arrowColor: {
+                if (_speed < 3)  return "#00bcd4"
+                if (_speed < 8)  return "#4caf50"
+                if (_speed < 15) return "#ff9800"
+                return "#f44336"
             }
 
-            // Wind arrow image — rotated to wind direction (meteorological: FROM direction)
-            QGCColoredImage {
-                id:                 arrowImage
-                anchors.centerIn:   parent
-                width:              parent.arrowSize * 0.8
-                height:             width
-                source:             "/custom/img/wind_arrow.svg"
-                color:              parent.arrowColor
-                sourceSize.width:   width
-                fillMode:           Image.PreserveAspectFit
+            sourceItem: Item {
+                width:  _arrowSize
+                height: _arrowSize + ScreenTools.smallFontPointSize + 2
 
-                transform: Rotation {
-                    origin.x: arrowImage.width / 2
-                    origin.y: arrowImage.height / 2
-                    angle:    direction   // Wind direction is "from" — arrow points in wind flow direction
+                QGCColoredImage {
+                    id:                 arrowImage
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.top:        parent.top
+                    width:              _arrowSize * 0.8
+                    height:             width
+                    source:             "/custom/img/wind_arrow.svg"
+                    color:              _arrowColor
+                    sourceSize.width:   width
+                    fillMode:           Image.PreserveAspectFit
+
+                    transform: Rotation {
+                        origin.x: arrowImage.width / 2
+                        origin.y: arrowImage.height / 2
+                        angle:    _direction
+                    }
                 }
-            }
 
-            // Speed label beneath arrow
-            QGCLabel {
-                anchors.top:                arrowImage.bottom
-                anchors.topMargin:          1
-                anchors.horizontalCenter:   parent.horizontalCenter
-                text:                       speed.toFixed(1)
-                color:                      parent.arrowColor
-                font.pointSize:             ScreenTools.smallFontPointSize * 0.8
-                font.bold:                  true
+                QGCLabel {
+                    anchors.top:                arrowImage.bottom
+                    anchors.topMargin:          1
+                    anchors.horizontalCenter:   parent.horizontalCenter
+                    text:                       _speed.toFixed(1)
+                    color:                      _arrowColor
+                    font.pointSize:             ScreenTools.smallFontPointSize * 0.8
+                    font.bold:                  true
+                }
             }
         }
     }

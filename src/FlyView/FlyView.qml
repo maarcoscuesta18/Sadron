@@ -19,6 +19,7 @@ Item {
     id: _root
 
     readonly property bool _is3DMode: QGCViewer3DManager.displayMode === QGCViewer3DManager.View3D
+    property var videoSurfaceItem: videoControl.videoSurfaceItem
 
     // These should only be used by MainRootWindow
     property var planController:    _planController

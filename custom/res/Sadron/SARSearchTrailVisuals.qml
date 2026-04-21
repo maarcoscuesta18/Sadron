@@ -15,6 +15,9 @@ Item {
     property var  mapControl
     property bool showTrails: true
 
+    // 3E: Maximum trail points before pruning oldest entries
+    readonly property int _maxTrailPoints: 500
+
     // 8-color palette for vehicle differentiation
     readonly property var _trailColors: [
         "#e74c3c",  // red
@@ -99,6 +102,13 @@ Item {
                     swathLine.addCoordinate(coordinate)
                     trailLine.addCoordinate(coordinate)
                     _pointCount++
+
+                    // 3E: Prune oldest points to cap trail length
+                    if (_pointCount > _maxTrailPoints) {
+                        swathLine.removeCoordinate(0)
+                        trailLine.removeCoordinate(0)
+                        _pointCount--
+                    }
                 }
                 function onUpdateLastPoint(coordinate) {
                     if (_pointCount > 0) {
@@ -121,11 +131,13 @@ Item {
                 swathLine.path = []
                 trailLine.path = []
                 var pts = _vehicle.trajectoryPoints.list()
-                for (var i = 0; i < pts.length; i++) {
+                // 3E: Only load last _maxTrailPoints to avoid large initial polylines
+                var startIdx = Math.max(0, pts.length - _maxTrailPoints)
+                for (var i = startIdx; i < pts.length; i++) {
                     swathLine.addCoordinate(pts[i])
                     trailLine.addCoordinate(pts[i])
                 }
-                _pointCount = pts.length
+                _pointCount = pts.length - startIdx
             }
 
             Timer {

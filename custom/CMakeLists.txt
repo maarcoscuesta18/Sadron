@@ -103,6 +103,7 @@ set(CUSTOM_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/SAR/SARTargetManager.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/SAR/SARCoverageTracker.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/SAR/SARCoverageTracker.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/SAR/SARGeoUtils.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/SAR/SARReTaskingManager.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/SAR/SARReTaskingManager.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/SAR/VehicleCoordinator.cc

@@ -1,4 +1,5 @@
 #include "SARZoneManager.h"
+#include "SARGeoUtils.h"
 #include "QmlObjectListModel.h"
 #include "QGCLoggingCategory.h"
 #include "QGCMapPolygon.h"
@@ -498,27 +499,10 @@ double SARZoneManager::_signedArea(const QList<QGeoCoordinate> &poly)
     return area * 0.5;
 }
 
+// 5A: Delegates to shared utility — single source of truth
 bool SARZoneManager::_pointInPolygon(const QGeoCoordinate &point, const QVariantList &polygon)
 {
-    // Ray-casting algorithm: cast a ray from point eastward, count crossings.
-    const int n = polygon.size();
-    if (n < 3) return false;
-
-    bool inside = false;
-    double px = point.longitude(), py = point.latitude();
-
-    for (int i = 0, j = n - 1; i < n; j = i++) {
-        const QGeoCoordinate ci = polygon[i].value<QGeoCoordinate>();
-        const QGeoCoordinate cj = polygon[j].value<QGeoCoordinate>();
-        double xi = ci.longitude(), yi = ci.latitude();
-        double xj = cj.longitude(), yj = cj.latitude();
-
-        if (((yi > py) != (yj > py)) &&
-            (px < (xj - xi) * (py - yi) / (yj - yi) + xi)) {
-            inside = !inside;
-        }
-    }
-    return inside;
+    return SARGeoUtils::isPointInPolygon(point, polygon);
 }
 
 QGeoCoordinate SARZoneManager::_centroid(const QVariantList &polygon)

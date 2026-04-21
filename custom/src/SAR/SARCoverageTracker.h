@@ -71,6 +71,8 @@ private:
     QGeoCoordinate _cellToCoord(int gridX, int gridY) const;
     bool _isPointInPolygon(const QGeoCoordinate &point, const QVariantList &polygon) const;
 
+    void _invalidateCoveredCellsCache();
+
     QGeoCoordinate _gridOrigin;
     double _cellSizeMeters = 10.0;      // Each grid cell is 10m x 10m
     double _cameraFovMeters = 20.0;     // Camera FOV footprint at flight altitude
@@ -78,9 +80,16 @@ private:
     int _gridHeight = 0;                // Number of cells tall
     int _totalCells = 0;
 
+    // 1C: Pre-computed flat-earth constants for _coordToCell()
+    double _cosRefLat = 1.0;            // cos(gridOrigin.latitude in radians)
+
     // Set of covered cell coordinates (gridX, gridY)
     QSet<QPair<int, int>> _coveredCells;
     QSet<QPair<int, int>> _searchAreaCells;
+
+    // 1B: Cached QVariantList for coveredCells property — rebuilt on dirty flag
+    mutable QVariantList _coveredCellsCache;
+    mutable bool _coveredCellsCacheDirty = true;
 
     // Track last known position per vehicle to avoid redundant updates
     QHash<int, QGeoCoordinate> _lastVehiclePositions;

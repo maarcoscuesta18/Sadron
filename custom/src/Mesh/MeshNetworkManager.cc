@@ -5,6 +5,7 @@
 
 #include <QGCMAVLink.h>
 #include <QtCore/QDateTime>
+#include <vector>
 
 QGC_LOGGING_CATEGORY(MeshNetworkManagerLog, "Sadron.MeshNetworkManager")
 
@@ -19,13 +20,18 @@ MeshNode::MeshNode(int vehicleId, QObject *parent)
 {
 }
 
+// 5B: Return cached QVariantList — avoids rebuild on every QML property read
 QVariantList MeshNode::connectedNodes() const
 {
-    QVariantList list;
-    for (int id : _connectedNodeIds) {
-        list.append(id);
+    if (_connectedNodesCacheDirty) {
+        _connectedNodesCache.clear();
+        _connectedNodesCache.reserve(_connectedNodeIds.size());
+        for (int id : _connectedNodeIds) {
+            _connectedNodesCache.append(id);
+        }
+        _connectedNodesCacheDirty = false;
     }
-    return list;
+    return _connectedNodesCache;
 }
 
 void MeshNode::setPosition(const QGeoCoordinate &pos) { if (_position != pos) { _position = pos; emit positionChanged(); } }
@@ -38,6 +44,7 @@ void MeshNode::addConnectedNode(int nodeId)
 {
     if (!_connectedNodeIds.contains(nodeId)) {
         _connectedNodeIds.append(nodeId);
+        _invalidateConnectedNodesCache();
         emit linksChanged();
     }
 }
@@ -45,6 +52,7 @@ void MeshNode::addConnectedNode(int nodeId)
 void MeshNode::removeConnectedNode(int nodeId)
 {
     if (_connectedNodeIds.removeOne(nodeId)) {
+        _invalidateConnectedNodesCache();
         emit linksChanged();
     }
 }
@@ -53,8 +61,14 @@ void MeshNode::clearConnectedNodes()
 {
     if (!_connectedNodeIds.isEmpty()) {
         _connectedNodeIds.clear();
+        _invalidateConnectedNodesCache();
         emit linksChanged();
     }
+}
+
+void MeshNode::_invalidateConnectedNodesCache()
+{
+    _connectedNodesCacheDirty = true;
 }
 
 void MeshNode::updateLastSeen()
@@ -75,9 +89,20 @@ MeshNetworkManager::MeshNetworkManager(QObject *parent)
     : QObject(parent)
     , _nodes(new QmlObjectListModel(this))
     , _healthCheckTimer(new QTimer(this))
+    , _topologyTimer(new QTimer(this))
 {
     connect(_healthCheckTimer, &QTimer::timeout, this, &MeshNetworkManager::_checkNodeHealth);
     _healthCheckTimer->start(kHealthCheckIntervalMs);
+
+    // Debounce topology recalculation — fires at most every kTopologyDebounceMs
+    _topologyTimer->setSingleShot(true);
+    _topologyTimer->setInterval(kTopologyDebounceMs);
+    connect(_topologyTimer, &QTimer::timeout, this, [this]() {
+        if (_topologyDirty) {
+            _topologyDirty = false;
+            _updateTopology();
+        }
+    });
 }
 
 MeshNetworkManager::~MeshNetworkManager()
@@ -158,31 +183,27 @@ void MeshNetworkManager::setNodeDegradedMs(int ms)
 
 MeshNode *MeshNetworkManager::getNode(int vehicleId) const
 {
-    for (int i = 0; i < _nodes->count(); i++) {
-        auto *node = qobject_cast<MeshNode *>(_nodes->get(i));
-        if (node && node->vehicleId() == vehicleId) return node;
-    }
-    return nullptr;
+    return _nodeById.value(vehicleId, nullptr);
 }
 
 void MeshNetworkManager::removeNode(int vehicleId)
 {
-    for (int i = 0; i < _nodes->count(); i++) {
-        auto *node = qobject_cast<MeshNode *>(_nodes->get(i));
-        if (node && node->vehicleId() == vehicleId) {
-            // Remove this node from all other nodes' connection lists
-            for (int j = 0; j < _nodes->count(); j++) {
-                auto *other = qobject_cast<MeshNode *>(_nodes->get(j));
-                if (other) other->removeConnectedNode(vehicleId);
-            }
-            _nodes->removeAt(i);
-            node->deleteLater();
-            emit nodeRemoved(vehicleId);
-            emit topologyChanged();
-            _evaluateHealth();
-            return;
-        }
+    MeshNode *node = _nodeById.value(vehicleId, nullptr);
+    if (!node) return;
+
+    // Remove this node from all other nodes' connection lists
+    for (int j = 0; j < _nodes->count(); j++) {
+        auto *other = qobject_cast<MeshNode *>(_nodes->get(j));
+        if (other) other->removeConnectedNode(vehicleId);
     }
+
+    int idx = _nodes->indexOf(node);
+    if (idx >= 0) _nodes->removeAt(idx);
+    _nodeById.remove(vehicleId);
+    node->deleteLater();
+    emit nodeRemoved(vehicleId);
+    emit topologyChanged();
+    _evaluateHealth();
 }
 
 bool MeshNetworkManager::areNodesConnected(int vehicleId1, int vehicleId2) const
@@ -250,9 +271,27 @@ void MeshNetworkManager::processMavlinkMessage(Vehicle *vehicle, const mavlink_m
     case MAVLINK_MSG_ID_GLOBAL_POSITION_INT: {
         mavlink_global_position_int_t pos;
         mavlink_msg_global_position_int_decode(&message, &pos);
-        node->setPosition(QGeoCoordinate(pos.lat / 1e7, pos.lon / 1e7, pos.relative_alt / 1000.0));
+        QGeoCoordinate newPos(pos.lat / 1e7, pos.lon / 1e7, pos.relative_alt / 1000.0);
+
+        // 1D: Only update position if moved more than threshold
+        bool posChanged = true;
+        if (node->position().isValid()) {
+            double dist = node->position().distanceTo(newPos);
+            if (dist < kNodeMoveThresholdM) {
+                posChanged = false;
+            }
+        }
+
         node->updateLastSeen();
-        _updateTopology();
+
+        if (posChanged) {
+            node->setPosition(newPos);
+            // 1A: Mark topology dirty and start debounce timer
+            _topologyDirty = true;
+            if (!_topologyTimer->isActive()) {
+                _topologyTimer->start();
+            }
+        }
         break;
     }
     case MAVLINK_MSG_ID_SYS_STATUS: {
@@ -279,10 +318,11 @@ void MeshNetworkManager::processMavlinkMessage(Vehicle *vehicle, const mavlink_m
 
 MeshNode *MeshNetworkManager::_getOrCreateNode(int vehicleId)
 {
-    MeshNode *node = getNode(vehicleId);
+    MeshNode *node = _nodeById.value(vehicleId, nullptr);
     if (!node) {
         node = new MeshNode(vehicleId, this);
         _nodes->append(node);
+        _nodeById.insert(vehicleId, node);
         qCDebug(MeshNetworkManagerLog) << "New mesh node added: vehicle" << vehicleId;
         emit nodeAdded(vehicleId);
         emit topologyChanged();
@@ -292,12 +332,12 @@ MeshNode *MeshNetworkManager::_getOrCreateNode(int vehicleId)
 
 void MeshNetworkManager::_updateTopology()
 {
-    // Block signals on all nodes during the reset+recalc to avoid
-    // redundant per-property emissions; a single topologyChanged()
-    // at the end is sufficient for QML.
+    // 4C: Use RAII signal blockers to guarantee unblock even on early return
+    std::vector<QSignalBlocker> blockers;
+    blockers.reserve(_nodes->count());
     for (int i = 0; i < _nodes->count(); i++) {
         auto *node = qobject_cast<MeshNode *>(_nodes->get(i));
-        if (node) node->blockSignals(true);
+        if (node) blockers.emplace_back(*node);
     }
 
     // Reset signal strength so it can recover when nodes move closer
@@ -331,11 +371,7 @@ void MeshNetworkManager::_updateTopology()
         }
     }
 
-    // Unblock signals on all nodes
-    for (int i = 0; i < _nodes->count(); i++) {
-        auto *node = qobject_cast<MeshNode *>(_nodes->get(i));
-        if (node) node->blockSignals(false);
-    }
+    // RAII blockers destroyed here — signals auto-unblocked
 
     emit topologyChanged();
 }

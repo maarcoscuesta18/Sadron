@@ -59,6 +59,7 @@ ApplicationWindow {
     }
 
     readonly property real      _topBottomMargins:          ScreenTools.defaultFontPixelHeight * 0.5
+    property var               liveVideoSurfaceItem:        flyView.videoSurfaceItem
 
     //-------------------------------------------------------------------------
     //-- Global Scope Variables
@@ -324,6 +325,7 @@ ApplicationWindow {
 
     Rectangle {
         id:             toolDrawer
+        objectName:     "toolDrawer"
         anchors.fill:   parent
         visible:        false
         color:          qgcPal.window
@@ -336,6 +338,9 @@ ApplicationWindow {
         onVisibleChanged: {
             if (!toolDrawer.visible) {
                 toolDrawerLoader.source = ""
+                Qt.callLater(function() {
+                    QGroundControl.videoManager.refreshVideoBindings()
+                })
             }
         }
 

@@ -37,88 +37,57 @@ Item {
         return "Cliff"
     }
 
-    // ── Slope Grid Cells on Map ──
+    // 3C: Compute cell pixel size once at overlay level (shared across all cells)
+    property real _cellPixelSize: {
+        if (!mapControl || !environmentalDataProvider) return 8
+        var _z = mapControl.zoomLevel  // force re-eval on zoom
+        var rows = environmentalDataProvider.slopeRows
+        var cols = environmentalDataProvider.slopeCols
+        if (rows < 2 || cols < 2) return 8
+        var grid = environmentalDataProvider.slopeGrid
+        if (grid.length < 2) return 8
+        var p0 = mapControl.fromCoordinate(
+            QtPositioning.coordinate(grid[0].latitude, grid[0].longitude), false)
+        var p1 = mapControl.fromCoordinate(
+            QtPositioning.coordinate(grid[1].latitude, grid[1].longitude), false)
+        var dx = Math.abs(p1.x - p0.x)
+        return Math.max(4, dx)
+    }
+
+    // 3C: Use MapQuickItem for slope cells — lets the map framework handle
+    // coordinate→screen positioning natively, avoiding per-cell fromCoordinate() calls.
+    // Removed per-cell MouseArea + ToolTip (hoverEnabled on hundreds of items is expensive).
     Repeater {
         id: slopeGridRepeater
         model: environmentalDataProvider ? environmentalDataProvider.slopeGrid : []
 
-        Item {
-            id: slopeCellDelegate
+        MapQuickItem {
+            parent:     mapControl
+            coordinate: QtPositioning.coordinate(
+                            modelData ? modelData.latitude  : 0,
+                            modelData ? modelData.longitude : 0)
+            anchorPoint.x: _cellPixelSize / 2
+            anchorPoint.y: _cellPixelSize / 2
 
-            property var  cellData:  modelData
-            property real lat:       cellData ? cellData.latitude  : 0
-            property real lon:       cellData ? cellData.longitude : 0
-            property real slope:     cellData ? cellData.slope     : 0
-            property real aspect:    cellData ? cellData.aspect    : 0
-            property real elevation: cellData ? cellData.elevation : 0
+            property real slope:  modelData ? modelData.slope  : 0
+            property real aspect: modelData ? modelData.aspect : 0
 
-            // Reference center + zoomLevel so QML re-evaluates on pan/zoom
-            property var screenPos: {
-                if (!mapControl) return Qt.point(0, 0)
-                var _c = mapControl.center
-                var _z = mapControl.zoomLevel
-                return mapControl.fromCoordinate(
-                    QtPositioning.coordinate(lat, lon), false)
-            }
-
-            // Cell size depends on the grid density and zoom level
-            // Use a neighboring cell to compute pixel spacing
-            property real cellPixelSize: {
-                if (!mapControl || !environmentalDataProvider) return 8
-                var _z = mapControl.zoomLevel  // force re-eval on zoom
-                var rows = environmentalDataProvider.slopeRows
-                var cols = environmentalDataProvider.slopeCols
-                if (rows < 2 || cols < 2) return 8
-                // Estimate pixel size from grid resolution
-                var grid = environmentalDataProvider.slopeGrid
-                if (grid.length < 2) return 8
-                var p0 = mapControl.fromCoordinate(
-                    QtPositioning.coordinate(grid[0].latitude, grid[0].longitude), false)
-                var p1 = mapControl.fromCoordinate(
-                    QtPositioning.coordinate(grid[1].latitude, grid[1].longitude), false)
-                var dx = Math.abs(p1.x - p0.x)
-                return Math.max(4, dx)
-            }
-
-            x:       screenPos.x - cellPixelSize / 2
-            y:       screenPos.y - cellPixelSize / 2
-            width:   cellPixelSize
-            height:  cellPixelSize
-            visible: mapControl !== null && screenPos.x > -cellPixelSize && screenPos.y > -cellPixelSize
-                     && screenPos.x < slopeOverlay.width + cellPixelSize
-                     && screenPos.y < slopeOverlay.height + cellPixelSize
-
-            Rectangle {
-                anchors.fill:   parent
-                color:          slopeColor(slope)
-                radius:         1
+            sourceItem: Rectangle {
+                width:   _cellPixelSize
+                height:  _cellPixelSize
+                color:   slopeColor(slope)
+                radius:  1
 
                 // Aspect indicator — tiny line showing direction of steepest descent
                 Rectangle {
-                    visible:                    slope > 5 && parent.width > 10
-                    anchors.centerIn:           parent
-                    width:                      1
-                    height:                     parent.height * 0.4
-                    color:                      Qt.rgba(1, 1, 1, 0.4)
-                    rotation:                   aspect
-                    transformOrigin:            Item.Center
+                    visible:            slope > 5 && parent.width > 10
+                    anchors.centerIn:   parent
+                    width:              1
+                    height:             parent.height * 0.4
+                    color:              Qt.rgba(1, 1, 1, 0.4)
+                    rotation:           aspect
+                    transformOrigin:    Item.Center
                 }
-            }
-
-            // Tooltip on hover (only for larger cells)
-            ToolTip {
-                visible:    cellMa.containsMouse && cellPixelSize > 12
-                text:       slope.toFixed(1) + "\u00B0 " + slopeLabel(slope) + "\n"
-                            + "Aspect: " + aspect.toFixed(0) + "\u00B0\n"
-                            + "Elev: " + elevation.toFixed(0) + "m"
-                delay:      300
-            }
-
-            MouseArea {
-                id:             cellMa
-                anchors.fill:   parent
-                hoverEnabled:   true
-                acceptedButtons: Qt.NoButton
             }
         }
     }

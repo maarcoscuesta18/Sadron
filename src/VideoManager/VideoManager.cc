@@ -39,6 +39,31 @@ static constexpr const char *kFileExtension[VideoReceiver::FILE_FORMAT_MAX + 1] 
 
 Q_APPLICATION_STATIC(VideoManager, _videoManagerInstance);
 
+static bool _isEffectivelyVisible(const QQuickItem *item)
+{
+    for (const QQuickItem *current = item; current; current = current->parentItem()) {
+        if (!current->isVisible()) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static bool _hasVisibleAncestorObjectName(const QQuickItem *item, const QString &objectName)
+{
+    for (const QQuickItem *current = item; current; current = current->parentItem()) {
+        if (!current->isVisible()) {
+            return false;
+        }
+        if (current->objectName() == objectName) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 bool VideoManager::_shouldSkipGStreamerForUnitTests()
 {
     return qgcApp() && qgcApp()->runningUnitTests() && !qEnvironmentVariableIsSet("QGC_TEST_ENABLE_GSTREAMER");
@@ -278,6 +303,68 @@ void VideoManager::cleanup()
     }
 }
 
+void VideoManager::refreshVideoBindings()
+{
+    if (!_mainWindow) {
+        qCWarning(VideoManagerLog) << "refreshVideoBindings called before init";
+        return;
+    }
+
+    bool bindingsChanged = false;
+    for (VideoReceiver *receiver : std::as_const(_videoReceivers)) {
+        QQuickItem *widget = _findVideoWidget(receiver->name());
+        if (!widget) {
+            qCWarning(VideoManagerLog) << "Unable to find visible video widget for" << receiver->name();
+            continue;
+        }
+
+        if ((receiver->widget() == widget) && receiver->sink()) {
+            continue;
+        }
+
+        qCDebug(VideoManagerLog) << "Rebinding" << receiver->name() << "to widget" << widget;
+        bindingsChanged = true;
+    }
+
+    if (!bindingsChanged) {
+        return;
+    }
+
+    _rebindingVideoSinks = true;
+    stopVideo();
+
+    QTimer::singleShot(1200, this, [this]() {
+        for (VideoReceiver *receiver : std::as_const(_videoReceivers)) {
+            QQuickItem *widget = _findVideoWidget(receiver->name());
+            if (!widget) {
+                qCWarning(VideoManagerLog) << "Skipping video rebind, widget not found for" << receiver->name();
+                continue;
+            }
+
+            if (receiver->sink()) {
+                QGCCorePlugin::instance()->releaseVideoSink(receiver->sink());
+                receiver->setSink(nullptr);
+            }
+
+            receiver->setWidget(widget);
+
+            void *sink = QGCCorePlugin::instance()->createVideoSink(widget, receiver);
+            if (!sink) {
+                qCCritical(VideoManagerLog) << "createVideoSink() failed during rebind" << receiver->name();
+                continue;
+            }
+
+            receiver->setSink(sink);
+        }
+
+        _rebindingVideoSinks = false;
+
+        if (hasVideo()) {
+            startVideo();
+        }
+    });
+}
+
 void VideoManager::_cleanupOldVideos()
 {
     if (!SettingsManager::instance()->videoSettings()->enableStorageLimit()->rawValue().toBool()) {
@@ -454,6 +541,32 @@ bool VideoManager::gstreamerEnabled()
 bool VideoManager::uvcEnabled()
 {
     return UVCReceiver::enabled();
+}
+
+QQuickItem *VideoManager::_findVideoWidget(const QString &objectName) const
+{
+    if (!_mainWindow) {
+        return nullptr;
+    }
+
+    const QList<QQuickItem*> widgets = _mainWindow->findChildren<QQuickItem*>(objectName, Qt::FindChildrenRecursively);
+    if (widgets.isEmpty()) {
+        return nullptr;
+    }
+
+    for (auto it = widgets.crbegin(); it != widgets.crend(); ++it) {
+        if (_hasVisibleAncestorObjectName(*it, QStringLiteral("toolDrawer"))) {
+            return *it;
+        }
+    }
+
+    for (auto it = widgets.crbegin(); it != widgets.crend(); ++it) {
+        if (_isEffectivelyVisible(*it)) {
+            return *it;
+        }
+    }
+
+    return widgets.constLast();
 }
 
 bool VideoManager::qtmultimediaEnabled()
@@ -865,6 +978,8 @@ void VideoManager::_initVideoReceiver(VideoReceiver *receiver, QQuickWindow *win
         receiver->setStarted(false);
         if (status == VideoReceiver::STATUS_INVALID_URL) {
             qCDebug(VideoManagerLog) << "Invalid video URL. Not restarting";
+        } else if (_rebindingVideoSinks) {
+            qCDebug(VideoManagerLog) << "Video sink rebind in progress, deferring restart for" << receiver->name();
         } else {
             QTimer::singleShot(1000, receiver, [this, receiver]() {
                 qCDebug(VideoManagerLog) << "Restarting video receiver" << receiver->name() << receiver->uri();

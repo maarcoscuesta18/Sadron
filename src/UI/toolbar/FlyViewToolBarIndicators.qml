@@ -26,7 +26,7 @@ Item {
                 anchors.top:        parent.top
                 anchors.bottom:     parent.bottom
                 source:             modelData
-                visible:            item ? item.showIndicator : false
+                visible:            !!(item && item.showIndicator)
             }
         }
 

@@ -209,11 +209,13 @@ Rectangle {
                 Item {
                     anchors.fill: parent
 
-                    FlightDisplayViewVideo {
-                        id:             liveFeed
-                        anchors.fill:   parent
-                        useSmallFont:   true
-                        visible:        QGroundControl.videoManager.isStreamSource
+                    ShaderEffectSource {
+                        id:                 liveFeedMirror
+                        anchors.fill:       parent
+                        sourceItem:         mainWindow.liveVideoSurfaceItem
+                        live:               true
+                        recursive:          true
+                        visible:            !!sourceItem && QGroundControl.videoManager.isStreamSource
                     }
 
                     // UVC fallback

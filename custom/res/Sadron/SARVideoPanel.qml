@@ -21,6 +21,21 @@ Rectangle {
     property int  _vehicleCount: _vehicles ? _vehicles.count : 0
     property var  _feedPreferenceByVehicleId: ({})
 
+    Component.onCompleted: {
+        _applyFeedPreference(_activeVehicle)
+        Qt.callLater(function() {
+            QGroundControl.videoManager.refreshVideoBindings()
+        })
+    }
+
+    onVisibleChanged: {
+        if (visible) {
+            Qt.callLater(function() {
+                QGroundControl.videoManager.refreshVideoBindings()
+            })
+        }
+    }
+
     function _vehicleKey(vehicle) {
         return vehicle ? vehicle.id.toString() : ""
     }
@@ -186,7 +201,7 @@ Rectangle {
 
         if (preference.mode === "thermal") {
             if (camera.thermalStreamInstance) {
-                camera.thermalMode = MavlinkCameraControl.THERMAL_FULL
+                camera.thermalMode = MavlinkCameraControlInterface.THERMAL_FULL
             } else {
                 const fallback = _defaultFeedPreference(vehicle)
                 _setFeedPreference(vehicle, fallback)
@@ -195,7 +210,7 @@ Rectangle {
             return
         }
 
-        camera.thermalMode = MavlinkCameraControl.THERMAL_OFF
+        camera.thermalMode = MavlinkCameraControlInterface.THERMAL_OFF
         if (preference.streamIndex >= 0 && preference.streamIndex < _streamLabelCount(camera)) {
             camera.currentStream = preference.streamIndex
         }
@@ -230,6 +245,9 @@ Rectangle {
 
         function onActiveVehicleChanged(vehicle) {
             _root._applyFeedPreference(vehicle)
+            Qt.callLater(function() {
+                QGroundControl.videoManager.refreshVideoBindings()
+            })
         }
     }
 
@@ -240,8 +258,6 @@ Rectangle {
             _root._pruneMissingVehiclePreferences()
         }
     }
-
-    Component.onCompleted: _applyFeedPreference(_activeVehicle)
 
     ColumnLayout {
         anchors.fill:       parent

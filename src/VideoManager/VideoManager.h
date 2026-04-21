@@ -48,6 +48,7 @@ public:
     static VideoManager *instance();
 
     Q_INVOKABLE void grabImage(const QString &imageFile = QString());
+    Q_INVOKABLE void refreshVideoBindings();
     Q_INVOKABLE void startRecording(const QString &videoFile = QString());
     Q_INVOKABLE void startVideo();
     Q_INVOKABLE void stopRecording();
@@ -118,6 +119,7 @@ private:
     bool _updateUVC(VideoReceiver *receiver);
     bool _updateSettings(VideoReceiver *receiver);
     bool _updateVideoUri(VideoReceiver *receiver, const QString &uri);
+    QQuickItem *_findVideoWidget(const QString &objectName) const;
     void _restartAllVideos();
     void _restartVideo(VideoReceiver *receiver);
     void _startReceiver(VideoReceiver *receiver);
@@ -135,6 +137,7 @@ private:
     bool _initialized = false;
     bool _gstreamerDisabledForUnitTests = false;
     bool _fullScreen = false;
+    bool _rebindingVideoSinks = false;
 
     QAtomicInteger<bool> _decoding = false;
     QAtomicInteger<bool> _recording = false;

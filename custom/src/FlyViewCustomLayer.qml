@@ -77,19 +77,19 @@ Item {
         id:             searchTrailLoader
         anchors.fill:   parent
         source:         "qrc:/custom/Sadron/SARSearchTrailVisuals.qml"
-        active:         true
+        active:         sarModeActive    // 3A: lazy-load — only when SAR panel is open
         onLoaded: {
             item.mapControl = Qt.binding(function() { return _root.mapControl })
             item.showTrails = Qt.binding(function() { return sarPanel.item ? sarPanel.item.showSearchTrails : true })
         }
     }
 
-    // ── SAR Zone Map Visuals (always visible when zones/search area exist) ──
+    // ── SAR Zone Map Visuals (visible when zones/search area exist) ──
     Loader {
         id:             zoneVisualsLoader
         anchors.fill:   parent
         source:         "qrc:/custom/Sadron/SARZoneMapVisuals.qml"
-        active:         true
+        active:         sarZoneManager && sarZoneManager.hasSearchArea   // 3A: lazy-load
         onLoaded: {
             if (item.hasOwnProperty("mapControl"))
                 item.mapControl = Qt.binding(function() { return _root.mapControl })
@@ -101,19 +101,19 @@ Item {
         id:             transectVisualsLoader
         anchors.fill:   parent
         source:         "qrc:/custom/Sadron/SARTransectMapVisuals.qml"
-        active:         true
+        active:         sarZoneManager && sarZoneManager.hasSearchArea   // 3A: lazy-load
         onLoaded: {
             if (item.hasOwnProperty("mapControl"))
                 item.mapControl = Qt.binding(function() { return _root.mapControl })
         }
     }
 
-    // ── SAR Target Map Visuals (always visible when targets exist) ──
+    // ── SAR Target Map Visuals (visible when targets exist) ──
     Loader {
         id:             targetVisualsLoader
         anchors.fill:   parent
         source:         "qrc:/custom/Sadron/SARTargetMapVisuals.qml"
-        active:         true
+        active:         sarTargetManager && sarTargetManager.targetCount > 0  // 3A: lazy-load
         onLoaded: {
             if (item.hasOwnProperty("mapControl"))
                 item.mapControl = Qt.binding(function() { return _root.mapControl })
@@ -125,7 +125,7 @@ Item {
         id:             coverageLoader
         anchors.fill:   parent
         source:         "qrc:/custom/Sadron/SARCoverageOverlay.qml"
-        active:         true
+        active:         sarCoverageTracker && sarCoverageTracker.cellsSearched > 0  // 3A: lazy-load
         onLoaded: {
             if (item.hasOwnProperty("mapControl")) {
                 item.mapControl = Qt.binding(function() { return _root.mapControl })
@@ -179,7 +179,7 @@ Item {
         id:             proximityOverlayLoader
         anchors.fill:   parent
         source:         "qrc:/custom/Sadron/ProximityAlertOverlay.qml"
-        active:         true
+        active:         vehicleCoordinator && vehicleCoordinator.activeConflictCount > 0  // 3A: lazy-load
         onLoaded: {
             if (item.hasOwnProperty("mapControl")) {
                 item.mapControl = Qt.binding(function() { return _root.mapControl })
@@ -196,7 +196,7 @@ Item {
         anchors.margins:        _toolsMargin
         anchors.leftMargin:     parentToolInsets.leftEdgeCenterInset + _toolsMargin
         visible:                sarModeActive
-        active:                 true
+        active:                 sarModeActive    // 3A: lazy-load panel only when SAR mode active
         source:                 "qrc:/custom/Sadron/SARPanel.qml"
         onLoaded: {
             if (item.hasOwnProperty("mapControl"))
@@ -215,7 +215,7 @@ Item {
         anchors.margins:        _toolsMargin
         anchors.rightMargin:    parentToolInsets.rightEdgeCenterInset + _toolsMargin
         visible:                sarModeActive && sarZoneManager && sarZoneManager.selectedZone !== null
-        active:                 true
+        active:                 sarModeActive    // 3A: lazy-load zone editor with SAR mode
         source:                 "qrc:/custom/Sadron/SARZoneEditor.qml"
         onLoaded: {
             if (item.hasOwnProperty("zone"))
@@ -237,7 +237,7 @@ Item {
         width:                  ScreenTools.defaultFontPixelWidth * 28
         height:                 ScreenTools.defaultFontPixelHeight * 24
         visible:                sarModeActive && vehicleCoordinator && vehicleCoordinator.enabled
-        active:                 true
+        active:                 sarModeActive    // 3A: lazy-load coordination panel
         source:                 "qrc:/custom/Sadron/CoordinationStatusPanel.qml"
     }
 
@@ -246,7 +246,7 @@ Item {
         id:             sarToastLoader
         anchors.fill:   parent
         source:         "qrc:/custom/Sadron/SARToast.qml"
-        active:         true
+        active:         sarModeActive    // 3A: lazy-load toast with SAR mode
     }
 
     // ── SAR Re-Tasking Popup (top-right, operator override for dynamic re-assignment) ──
@@ -254,7 +254,7 @@ Item {
         id:             reTaskingPopupLoader
         anchors.fill:   parent
         source:         "qrc:/custom/Sadron/SARReTaskingPopup.qml"
-        active:         true
+        active:         sarModeActive    // 3A: lazy-load re-tasking popup
     }
 
     // ── Wire toast to SAR signals ──
@@ -627,6 +627,7 @@ Item {
     }
 
     // ── Heading Indicator (from original custom layer) ──
+    // 3B: Optimized compass bar — 8 cardinal labels instead of 720 invisible items
     Rectangle {
         id:                         compassBar
         height:                     ScreenTools.defaultFontPixelHeight * 1.5
@@ -637,34 +638,36 @@ Item {
         radius:                     2
         clip:                       true
         anchors.horizontalCenter:   parent.horizontalCenter
+
+        // Only create labels for the 8 cardinal/intercardinal directions
         Repeater {
-            model: 720
+            model: [
+                { angle: 0,   label: "N"  },
+                { angle: 45,  label: "NE" },
+                { angle: 90,  label: "E"  },
+                { angle: 135, label: "SE" },
+                { angle: 180, label: "S"  },
+                { angle: 225, label: "SW" },
+                { angle: 270, label: "W"  },
+                { angle: 315, label: "NW" }
+            ]
+
             QGCLabel {
-                function _normalize(degrees) {
-                    var a = degrees % 360
-                    if (a < 0) a += 360
-                    return a
+                // Position relative to heading: offset = (angle - heading) mapped to bar width
+                property real _offset: {
+                    var diff = modelData.angle - _heading
+                    // Wrap to -180..180
+                    while (diff > 180) diff -= 360
+                    while (diff < -180) diff += 360
+                    return diff
                 }
-                property int _startAngle: modelData + 180 + _heading
-                property int _angle: _normalize(_startAngle)
+
                 anchors.verticalCenter: parent.verticalCenter
-                x:              visible ? ((modelData * (compassBar.width / 360)) - (width * 0.5)) : 0
-                visible:        _angle % 45 == 0
+                x:              (compassBar.width / 2) + (_offset * compassBar.width / 360) - (width * 0.5)
+                visible:        x > -width && x < compassBar.width
                 color:          "#75505565"
                 font.pointSize: ScreenTools.smallFontPointSize
-                text: {
-                    switch(_angle) {
-                    case 0:     return "N"
-                    case 45:    return "NE"
-                    case 90:    return "E"
-                    case 135:   return "SE"
-                    case 180:   return "S"
-                    case 225:   return "SW"
-                    case 270:   return "W"
-                    case 315:   return "NW"
-                    }
-                    return ""
-                }
+                text:           modelData.label
             }
         }
     }

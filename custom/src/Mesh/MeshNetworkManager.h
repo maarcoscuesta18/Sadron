@@ -72,12 +72,16 @@ signals:
     void latencyChanged();
 
 private:
+    void _invalidateConnectedNodesCache();
+
     int             _vehicleId;
     QGeoCoordinate  _position;
     NodeStatus      _status = Online;
     int             _signalStrength = 100;  // 0-100
     double          _batteryPercent = 100.0;
     QList<int>      _connectedNodeIds;
+    mutable QVariantList _connectedNodesCache;  // 5B: cached QVariantList
+    mutable bool    _connectedNodesCacheDirty = true;
     double          _latencyMs = 0.0;
     qint64          _lastSeenMs = 0;
 };
@@ -162,11 +166,16 @@ private:
     void _evaluateHealth();
 
     QmlObjectListModel *_nodes = nullptr;
+    QHash<int, MeshNode *> _nodeById;   // O(1) lookup by vehicleId (2B optimization)
     QTimer *_healthCheckTimer = nullptr;
+    QTimer *_topologyTimer = nullptr;    // Debounce topology recalculation (1A optimization)
+    bool _topologyDirty = false;
     bool _gcsConnected = false;
     double _maxRangeMeters = 2000.0;    // Default max mesh range
 
     static constexpr int kHealthCheckIntervalMs = 2000;
+    static constexpr int kTopologyDebounceMs = 2000;  // Recalc topology at most every 2s
+    static constexpr double kNodeMoveThresholdM = 1.0; // Min movement to trigger update (1D)
     int _nodeTimeoutMs = 10000;         // Node considered offline after 10s (configurable)
     int _nodeDegradedMs = 5000;         // Node considered degraded after 5s (configurable)
 };

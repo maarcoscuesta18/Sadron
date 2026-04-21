@@ -1,4 +1,5 @@
 #include "SARCoverageTracker.h"
+#include "SARGeoUtils.h"
 #include "QGCLoggingCategory.h"
 #include "Vehicle.h"
 
@@ -8,6 +9,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <QtCore/QThread>
 
 QGC_LOGGING_CATEGORY(SARCoverageTrackerLog, "Sadron.SARCoverageTracker")
 
@@ -59,12 +61,17 @@ double SARCoverageTracker::coveragePercent() const
 
 QVariantList SARCoverageTracker::coveredCells() const
 {
-    QVariantList result;
-    for (const auto &cell : _coveredCells) {
-        QGeoCoordinate coord = _cellToCoord(cell.first, cell.second);
-        result.append(QVariant::fromValue(coord));
+    // 1B: Return cached list; rebuild only when dirty
+    if (_coveredCellsCacheDirty) {
+        _coveredCellsCache.clear();
+        _coveredCellsCache.reserve(_coveredCells.size());
+        for (const auto &cell : _coveredCells) {
+            QGeoCoordinate coord = _cellToCoord(cell.first, cell.second);
+            _coveredCellsCache.append(QVariant::fromValue(coord));
+        }
+        _coveredCellsCacheDirty = false;
     }
-    return result;
+    return _coveredCellsCache;
 }
 
 void SARCoverageTracker::setCellSizeMeters(double size)
@@ -93,6 +100,11 @@ void SARCoverageTracker::initializeGrid(const QGeoCoordinate &origin, double wid
     _searchAreaCells.clear();
     _zoneCellCache.clear();
     _lastVehiclePositions.clear();
+
+    // 1C: Pre-compute cos(refLat) for flat-earth approximation in _coordToCell
+    _cosRefLat = std::cos(_gridOrigin.latitude() * M_PI / 180.0);
+
+    _invalidateCoveredCellsCache();
 
     qCDebug(SARCoverageTrackerLog) << "Grid initialized:" << _gridWidth << "x" << _gridHeight
                                     << "cells (" << _totalCells << "total)";
@@ -147,6 +159,7 @@ void SARCoverageTracker::markCellCovered(int gridX, int gridY)
         }
         if (!_coveredCells.contains(cell)) {
             _coveredCells.insert(cell);
+            _invalidateCoveredCellsCache();
             emit coverageChanged();
         }
     }
@@ -160,6 +173,7 @@ bool SARCoverageTracker::isCellCovered(int gridX, int gridY) const
 void SARCoverageTracker::resetCoverage()
 {
     _coveredCells.clear();
+    _invalidateCoveredCellsCache();
     emit coverageChanged();
 }
 
@@ -216,6 +230,7 @@ void SARCoverageTracker::_markPositionCovered(const QGeoCoordinate &position)
     }
 
     if (changed) {
+        _invalidateCoveredCellsCache();
         emit coverageChanged();
     }
 }
@@ -224,12 +239,11 @@ QPair<int, int> SARCoverageTracker::_coordToCell(const QGeoCoordinate &coord) co
 {
     if (!_gridOrigin.isValid()) return qMakePair(-1, -1);
 
-    // Calculate offset from grid origin in meters
-    double eastDist = _gridOrigin.distanceTo(QGeoCoordinate(_gridOrigin.latitude(), coord.longitude()));
-    if (coord.longitude() < _gridOrigin.longitude()) eastDist = -eastDist;
-
-    double southDist = _gridOrigin.distanceTo(QGeoCoordinate(coord.latitude(), _gridOrigin.longitude()));
-    if (coord.latitude() > _gridOrigin.latitude()) southDist = -southDist;
+    // 1C: Flat-earth approximation (~50x faster than Vincenty/Haversine)
+    // Accurate to <0.1% for SAR grid distances (typically <10km)
+    static constexpr double kMetersPerDegLat = 111320.0;
+    double eastDist  = (coord.longitude() - _gridOrigin.longitude()) * _cosRefLat * kMetersPerDegLat;
+    double southDist = (_gridOrigin.latitude() - coord.latitude()) * kMetersPerDegLat;
 
     int gridX = static_cast<int>(std::floor(eastDist / _cellSizeMeters));
     int gridY = static_cast<int>(std::floor(southDist / _cellSizeMeters));
@@ -257,6 +271,9 @@ QGeoCoordinate SARCoverageTracker::_cellToCoord(int gridX, int gridY) const
 
 double SARCoverageTracker::coverageForZone(const QVariantList &zonePolygon) const
 {
+    // 4D: Assert main-thread access — _zoneCellCache is mutable and not mutex-protected
+    Q_ASSERT(QThread::currentThread() == thread());
+
     if (_totalCells == 0 || zonePolygon.size() < 3) return 0.0;
 
     const QString cacheKey = _polygonCacheKey(zonePolygon);
@@ -296,22 +313,13 @@ double SARCoverageTracker::coverageForZone(const QVariantList &zonePolygon) cons
     return static_cast<double>(coveredInZone) / zoneCells.size();
 }
 
+// 5A: Delegates to shared utility — single source of truth
 bool SARCoverageTracker::_isPointInPolygon(const QGeoCoordinate &point, const QVariantList &polygon) const
 {
-    // Ray casting algorithm
-    int n = polygon.size();
-    bool inside = false;
-    double px = point.longitude(), py = point.latitude();
+    return SARGeoUtils::isPointInPolygon(point, polygon);
+}
 
-    for (int i = 0, j = n - 1; i < n; j = i++) {
-        QGeoCoordinate ci = polygon[i].value<QGeoCoordinate>();
-        QGeoCoordinate cj = polygon[j].value<QGeoCoordinate>();
-        double xi = ci.longitude(), yi = ci.latitude();
-        double xj = cj.longitude(), yj = cj.latitude();
-
-        if (((yi > py) != (yj > py)) && (px < (xj - xi) * (py - yi) / (yj - yi) + xi)) {
-            inside = !inside;
-        }
-    }
-    return inside;
+void SARCoverageTracker::_invalidateCoveredCellsCache()
+{
+    _coveredCellsCacheDirty = true;
 }

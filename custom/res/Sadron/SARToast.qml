@@ -51,7 +51,7 @@ Item {
             anchors.top:    parent.top
             anchors.bottom: parent.bottom
             width:          4
-            radius:         parent.radius
+            radius:         toastRect.radius
             color:          _accent
 
             // Clip the right side of the accent so only left corners are rounded

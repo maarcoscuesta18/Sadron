@@ -8,6 +8,7 @@ Item {
 
     property Item pipView
     property Item pipState: videoPipState
+    property alias videoSurfaceItem: videoStreaming
 
     property int    _track_rec_x:       0
     property int    _track_rec_y:       0

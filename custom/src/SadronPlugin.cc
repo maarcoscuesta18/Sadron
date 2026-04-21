@@ -71,15 +71,30 @@ SadronPlugin::SadronPlugin(QObject *parent)
 
 SadronPlugin::~SadronPlugin()
 {
-    delete _sarModeManager;
-    delete _vehicleCoordinator;
-    delete _sarReTaskingManager;
-    delete _sarMissionManager;
-    delete _sarZoneManager;
-    delete _sarTargetManager;
-    delete _sarCoverageTracker;
-    delete _meshNetworkManager;
-    delete _environmentalDataProvider;
+    // 4A: Safe destruction order —
+    // 1. Stop all timers to prevent callbacks during teardown
+    if (_coverageUpdateTimer) _coverageUpdateTimer->stop();
+
+    // 2. Disconnect cross-subsystem signals before deleting anything
+    //    This prevents signal emissions from reaching destroyed objects.
+    if (_sarZoneManager) {
+        disconnect(_sarZoneManager, nullptr, this, nullptr);
+    }
+    if (_sarCoverageTracker) {
+        disconnect(_sarCoverageTracker, nullptr, this, nullptr);
+    }
+
+    // 3. Delete in reverse dependency order (orchestrators first, base systems last)
+    //    SARModeManager → VehicleCoordinator → ReTasking → Mission → Zone/Target/Coverage → Mesh → Env
+    delete _sarModeManager;       _sarModeManager = nullptr;
+    delete _vehicleCoordinator;   _vehicleCoordinator = nullptr;
+    delete _sarReTaskingManager;  _sarReTaskingManager = nullptr;
+    delete _sarMissionManager;    _sarMissionManager = nullptr;
+    delete _sarZoneManager;       _sarZoneManager = nullptr;
+    delete _sarTargetManager;     _sarTargetManager = nullptr;
+    delete _sarCoverageTracker;   _sarCoverageTracker = nullptr;
+    delete _meshNetworkManager;   _meshNetworkManager = nullptr;
+    delete _environmentalDataProvider; _environmentalDataProvider = nullptr;
 }
 
 QGCCorePlugin *SadronPlugin::instance()

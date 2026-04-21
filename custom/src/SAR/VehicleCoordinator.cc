@@ -1,4 +1,5 @@
 #include "VehicleCoordinator.h"
+#include "SARGeoUtils.h"
 #include "SARMissionManager.h"
 #include "SARZoneManager.h"
 #include "SARTargetManager.h"
@@ -8,6 +9,7 @@
 #include "QGCLoggingCategory.h"
 #include "MultiVehicleManager.h"
 #include "Vehicle.h"
+#include "VehicleSupports.h"
 #include "ParameterManager.h"
 
 #include <cmath>
@@ -134,10 +136,14 @@ VehicleCoordinator::VehicleCoordinator(SARMissionManager   *missionMgr,
 
 VehicleCoordinator::~VehicleCoordinator()
 {
-    // Stop the tick timer to prevent callbacks after managers may be destroyed
+    // 4B: Stop timer FIRST — prevents callbacks while disconnecting
     if (_tickTimer) {
         _tickTimer->stop();
     }
+
+    // Disconnect all cross-subsystem signals to prevent stale callbacks
+    if (_zoneMgr) disconnect(_zoneMgr, nullptr, this, nullptr);
+    if (_meshMgr) disconnect(_meshMgr, nullptr, this, nullptr);
 }
 
 // ============================================================================
@@ -185,6 +191,7 @@ int VehicleCoordinator::overlapCount() const
 
 bool VehicleCoordinator::validateZoneOverlaps()
 {
+    _zoneOverlapsDirty = true;  // Force recompute on explicit validation
     _checkZoneOverlaps();
     return !hasOverlap();
 }
@@ -291,17 +298,30 @@ void VehicleCoordinator::_tick()
 {
     if (!_enabled) return;
 
-    if (_deconflictionEnabled) {
-        _checkBoundaryViolations();
+    // 4B: Guard against stale subsystem pointers
+    if (!_zoneMgr || !_meshMgr) return;
+
+    // 2C: Stagger checks across phases to spread CPU load
+    // Phase 0: boundary violations, Phase 1: proximity, Phase 2: comms
+    switch (_tickPhase) {
+    case 0:
+        if (_deconflictionEnabled) {
+            _checkBoundaryViolations();
+        }
+        break;
+    case 1:
+        if (_altitudeSeparationEnabled) {
+            _checkProximityConflicts();
+        }
+        break;
+    case 2:
+        if (_commsMonitorEnabled) {
+            _checkCommsStatus();
+        }
+        break;
     }
 
-    if (_altitudeSeparationEnabled) {
-        _checkProximityConflicts();
-    }
-
-    if (_commsMonitorEnabled) {
-        _checkCommsStatus();
-    }
+    _tickPhase = (_tickPhase + 1) % kTickPhases;
 }
 
 // ============================================================================
@@ -310,6 +330,8 @@ void VehicleCoordinator::_tick()
 
 void VehicleCoordinator::_onZonesChanged()
 {
+    // 2D: Mark overlaps dirty; actual recompute happens on next explicit call
+    _zoneOverlapsDirty = true;
     if (_deconflictionEnabled) {
         _checkZoneOverlaps();
     }
@@ -319,10 +341,14 @@ void VehicleCoordinator::_checkZoneOverlaps()
 {
     if (!_zoneMgr) return;
 
-    // Clear existing overlaps
-    while (_overlaps->count() > 0) {
-        auto *obj = _overlaps->get(0);
-        _overlaps->removeAt(0);
+    // 2D: Skip if zones haven't changed since last computation
+    if (!_zoneOverlapsDirty) return;
+    _zoneOverlapsDirty = false;
+
+    // 2A: Clear existing overlaps efficiently (reverse iterate avoids O(n²) shifts)
+    for (int i = _overlaps->count() - 1; i >= 0; --i) {
+        auto *obj = _overlaps->get(i);
+        _overlaps->removeAt(i);
         obj->deleteLater();
     }
 
@@ -400,24 +426,10 @@ bool VehicleCoordinator::_polygonsOverlap(const QVariantList &polyA, const QVari
     return false;
 }
 
+// 5A: Delegates to shared utility — single source of truth
 bool VehicleCoordinator::_isPointInPolygon(const QGeoCoordinate &point, const QVariantList &polygon) const
 {
-    // Ray casting algorithm (same as SARCoverageTracker)
-    int n = polygon.size();
-    bool inside = false;
-    double px = point.longitude(), py = point.latitude();
-
-    for (int i = 0, j = n - 1; i < n; j = i++) {
-        QGeoCoordinate ci = polygon[i].value<QGeoCoordinate>();
-        QGeoCoordinate cj = polygon[j].value<QGeoCoordinate>();
-        double xi = ci.longitude(), yi = ci.latitude();
-        double xj = cj.longitude(), yj = cj.latitude();
-
-        if (((yi > py) != (yj > py)) && (px < (xj - xi) * (py - yi) / (yj - yi) + xi)) {
-            inside = !inside;
-        }
-    }
-    return inside;
+    return SARGeoUtils::isPointInPolygon(point, polygon);
 }
 
 bool VehicleCoordinator::_edgesIntersect(const QGeoCoordinate &a1, const QGeoCoordinate &a2,
@@ -663,7 +675,7 @@ void VehicleCoordinator::_commandAltitudeAdjust(int vehicleId, double deltaAltM)
     // Only issue temporary deconfliction changes while the vehicle is already
     // in a guided/hold-style state that accepts altitude nudges safely.
     if (!vehicle->flying()
-        || !vehicle->guidedModeSupported()
+        || !vehicle->supports()->guidedMode()
         || !vehicle->guidedMode()
         || !vehicle->firmwarePlugin()) {
         qCDebug(VehicleCoordinatorLog) << "Skipping altitude adjust for V" << vehicleId
@@ -698,7 +710,7 @@ void VehicleCoordinator::_restoreAltitudeAdjust(int vehicleId)
     }
 
     if (!vehicle->flying()
-        || !vehicle->guidedModeSupported()
+        || !vehicle->supports()->guidedMode()
         || !vehicle->guidedMode()
         || !vehicle->firmwarePlugin()) {
         _altitudeAdjustments.remove(vehicleId);

@@ -357,8 +357,15 @@ private:
     // ── Handoff state ──
     bool _handoffDeconflictionEnabled = true;
 
+    // ── Staggered tick counter (2C) ──
+    int _tickPhase = 0;
+
+    // ── Zone overlap dirty flag (2D) ──
+    bool _zoneOverlapsDirty = true;
+
     // ── Constants ──
     static constexpr int kTickIntervalMs = 500;
+    static constexpr int kTickPhases = 3;             // 3-phase stagger: boundary, proximity, comms
     static constexpr double kMinSafetyBubbleH = 10.0;
     static constexpr double kMaxSafetyBubbleH = 500.0;
     static constexpr double kMinSafetyBubbleV = 3.0;
