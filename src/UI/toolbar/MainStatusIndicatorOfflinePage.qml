@@ -71,7 +71,7 @@ ToolIndicatorPage {
 
             SettingsGroupLayout {
                 heading:        qsTr("AutoConnect")
-                visible:        autoConnectSettings.visible
+                visible:        autoConnectSettings.userVisible
 
                 Repeater {
                     id: autoConnectRepeater
@@ -81,11 +81,10 @@ ToolIndicatorPage {
                         autoConnectSettings.autoConnectSiKRadio,
                         autoConnectSettings.autoConnectLibrePilot,
                         autoConnectSettings.autoConnectUDP,
-                        autoConnectSettings.autoConnectZeroConf,
                         autoConnectSettings.autoConnectRTKGPS,
                     ]
 
-                    property var names: [ qsTr("Pixhawk"), qsTr("SiK Radio"), qsTr("LibrePilot"), qsTr("UDP"), qsTr("Zero-Conf"), qsTr("RTK") ]
+                    property var names: [ qsTr("Pixhawk"), qsTr("SiK Radio"), qsTr("LibrePilot"), qsTr("UDP"), qsTr("RTK") ]
 
                     FactCheckBoxSlider {
                         Layout.fillWidth:   true

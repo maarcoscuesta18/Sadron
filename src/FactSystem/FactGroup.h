@@ -1,18 +1,14 @@
 #pragma once
 
-#include <QtCore/QLoggingCategory>
-#include <QtCore/QJsonArray>
 #include <QtCore/QMap>
 #include <QtCore/QStringList>
 #include <QtCore/QTimer>
 #include <QtQmlIntegration/QtQmlIntegration>
 
 #include "Fact.h"
-#include "MAVLinkLib.h"
+#include "MAVLinkMessageType.h"
 
 class Vehicle;
-
-Q_DECLARE_LOGGING_CATEGORY(FactGroupLog)
 
 /// Used to group Facts together into an object hierarachy.
 class FactGroup : public QObject

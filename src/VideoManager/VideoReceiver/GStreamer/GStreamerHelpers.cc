@@ -1,9 +1,12 @@
 #include "GStreamerHelpers.h"
+#include "QGCLoggingCategory.h"
 
 #include <gst/rtsp/gstrtspurl.h>
 #include <QtCore/QLatin1String>
 #include <QtCore/QLoggingCategory>
 #include <QtCore/QString>
+
+QGC_LOGGING_CATEGORY(GStreamerHelpersLog, "VideoManager.GStreamer.GStreamerHelpers")
 
 namespace GStreamer
 {
@@ -103,20 +106,20 @@ void changeFeatureRank(GstRegistry *registry, const char *featureName, uint16_t 
 
     GstPluginFeature *feature = gst_registry_lookup_feature(registry, featureName);
     if (!feature) {
-        qCDebug(GStreamerLog) << "Failed to change ranking of feature. Feature does not exist:" << featureName;
+        qCDebug(GStreamerHelpersLog) << "Failed to change ranking of feature. Feature does not exist:" << featureName;
         return;
     }
 
-    qCDebug(GStreamerLog) << "  Changing feature (" << featureName << ") to use rank:" << rank;
+    qCDebug(GStreamerHelpersLog) << "  Changing feature (" << featureName << ") to use rank:" << rank;
     gst_plugin_feature_set_rank(feature, rank);
     gst_clear_object(&feature);
 }
 
-void lowerSoftwareDecoderRanks(GstRegistry *registry)
+void lowerDecoderRanksByClass(GstRegistry *registry, bool lowerHardware)
 {
     static constexpr uint16_t NewRank = GST_RANK_NONE;
     if (!registry) {
-        qCCritical(GStreamerLog) << "Invalid registry!";
+        qCCritical(GStreamerHelpersLog) << "Invalid registry!";
         return;
     }
 
@@ -130,7 +133,7 @@ void lowerSoftwareDecoderRanks(GstRegistry *registry)
             continue;
         }
 
-        if (GStreamer::isHardwareDecoderFactory(factory)) {
+        if (GStreamer::isHardwareDecoderFactory(factory) != lowerHardware) {
             continue;
         }
 
@@ -139,7 +142,7 @@ void lowerSoftwareDecoderRanks(GstRegistry *registry)
             continue;
         }
 
-        qCDebug(GStreamerLog) << "Setting software decoder rank low:" << name << " rank:" << NewRank;
+        qCDebug(GStreamerHelpersLog) << "Lowering" << (lowerHardware ? "hardware" : "software") << "decoder rank:" << name;
         gst_plugin_feature_set_rank(GST_PLUGIN_FEATURE(factory), NewRank);
     }
 
@@ -149,7 +152,7 @@ void lowerSoftwareDecoderRanks(GstRegistry *registry)
 void prioritizeByHardwareClass(GstRegistry *registry, uint16_t prioritizedRank, bool requireHardware)
 {
     if (!registry) {
-        qCCritical(GStreamerLog) << "Failed to get gstreamer registry.";
+        qCCritical(GStreamerHelpersLog) << "Failed to get gstreamer registry.";
         return;
     }
 
@@ -158,12 +161,12 @@ void prioritizeByHardwareClass(GstRegistry *registry, uint16_t prioritizedRank, 
         GST_RANK_NONE);
 
     if (!decoderFactories) {
-        qCDebug(GStreamerLog) << "No decoder factories available while prioritizing"
+        qCDebug(GStreamerHelpersLog) << "No decoder factories available while prioritizing"
                               << (requireHardware ? "hardware" : "software") << "decoders";
         return;
     }
 
-    qCDebug(GStreamerLog) << "Prioritizing" << (requireHardware ? "hardware" : "software")
+    qCDebug(GStreamerHelpersLog) << "Prioritizing" << (requireHardware ? "hardware" : "software")
                            << "video decoders with rank:" << prioritizedRank;
     int matchedFactories = 0;
     for (GList *node = decoderFactories; node != nullptr; node = node->next) {
@@ -186,14 +189,12 @@ void prioritizeByHardwareClass(GstRegistry *registry, uint16_t prioritizedRank, 
     }
 
     if (matchedFactories == 0) {
-        qCWarning(GStreamerLog) << "No" << (requireHardware ? "hardware" : "software")
+        qCWarning(GStreamerHelpersLog) << "No" << (requireHardware ? "hardware" : "software")
                                << "video decoder factories found to reprioritize.";
     }
 
-    if (requireHardware) {
-        qCDebug(GStreamerLog) << "Lowering software decoder ranks for hardware priority.";
-        lowerSoftwareDecoderRanks(registry);
-    }
+    qCDebug(GStreamerHelpersLog) << "Lowering" << (requireHardware ? "software" : "hardware") << "decoder ranks.";
+    lowerDecoderRanksByClass(registry, !requireHardware);
 
     gst_plugin_feature_list_free(decoderFactories);
 }
@@ -205,7 +206,7 @@ void setCodecPriorities(VideoDecoderOptions option)
     GstRegistry *registry = gst_registry_get();
 
     if (!registry) {
-        qCCritical(GStreamerLog) << "Failed to get gstreamer registry.";
+        qCCritical(GStreamerHelpersLog) << "Failed to get gstreamer registry.";
         return;
     }
 
@@ -260,7 +261,7 @@ void setCodecPriorities(VideoDecoderOptions option)
         }
         break;
     default:
-        qCWarning(GStreamerLog) << "Can't handle decode option:" << option;
+        qCWarning(GStreamerHelpersLog) << "Can't handle decode option:" << option;
         break;
     }
 }

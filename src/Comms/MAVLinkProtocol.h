@@ -1,16 +1,14 @@
 #pragma once
 
 #include <QtCore/QByteArray>
-#include <QtCore/QLoggingCategory>
 #include <QtCore/QObject>
 #include <QtCore/QString>
 
 #include "LinkInterface.h"
-#include "MAVLinkLib.h"
+#include "MAVLinkEnums.h"
+#include "MAVLinkMessageType.h"
 
 class QFile;
-
-Q_DECLARE_LOGGING_CATEGORY(MAVLinkProtocolLog)
 
 /// MAVLink micro air vehicle protocol reference implementation.
 /// MAVLink is a generic communication protocol for micro air vehicles.

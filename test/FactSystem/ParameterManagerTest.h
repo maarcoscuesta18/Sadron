@@ -17,8 +17,10 @@ private slots:
     void _paramWriteNoAckPermanent();
     void _paramReadFirstAttemptNoResponseRetry();
     void _paramReadNoResponse();
-    // void _FTPnoFailure();
-    // void _FTPChangeParam();
+    void _paramWriteParamError();
+    void _paramReadParamError();
+    void _FTPnoFailure();
+    void _FTPChangeParam();
 
 private:
     void _noFailureWorker(MockConfiguration::FailureMode_t failureMode);

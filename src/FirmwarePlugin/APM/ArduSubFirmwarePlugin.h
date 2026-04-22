@@ -1,11 +1,7 @@
 #pragma once
 
-#include <QtCore/QLoggingCategory>
-
 #include "FactGroup.h"
 #include "APMFirmwarePlugin.h"
-
-Q_DECLARE_LOGGING_CATEGORY(APMSubmarineFactGroupLog)
 
 class APMSubmarineFactGroup : public FactGroup
 {
@@ -96,8 +92,6 @@ public:
     /// Return the resource file which contains the vehicle icon used in the flight view when the view is light (Map for instance)
     QString vehicleImageOutline(const Vehicle* vehicle) const override;
 
-    QString brandImageIndoor(const Vehicle *vehicle) const override { Q_UNUSED(vehicle); return QStringLiteral("/qmlimages/APM/BrandImageSub"); }
-    QString brandImageOutdoor(const Vehicle *vehicle) const override { Q_UNUSED(vehicle); return QStringLiteral("/qmlimages/APM/BrandImageSub"); }
     const FirmwarePlugin::remapParamNameMajorVersionMap_t& paramNameRemapMajorVersionMap() const override { return _remapParamName; }
     int remapParamNameHigestMinorVersionNumber(int majorVersionNumber) const override;
     bool adjustIncomingMavlinkMessage(Vehicle *vehicle, mavlink_message_t *message) override;

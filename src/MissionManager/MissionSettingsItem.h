@@ -5,10 +5,6 @@
 #include "CameraSection.h"
 #include "SpeedSection.h"
 
-#include <QtCore/QLoggingCategory>
-
-Q_DECLARE_LOGGING_CATEGORY(MissionSettingsItemLog)
-
 class PlanMasterController;
 class MissionItem;
 class Vehicle;
@@ -44,7 +40,7 @@ public:
     int     lastSequenceNumber  (void) const final;
     bool    load                (const QJsonObject& complexObject, int sequenceNumber, QString& errorString) final;
     double  greatestDistanceTo  (const QGeoCoordinate &other) const final;
-    QString mapVisualQML        (void) const final { return QStringLiteral("SimpleItemMapVisual.qml"); }
+    QString mapVisualQML        (void) const final { return QStringLiteral("HomePositionMapVisual.qml"); }
     bool    isSingleItem        (void) const final { return true; }
     bool    terrainCollision    (void) const final { return false; }
 

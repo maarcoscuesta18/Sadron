@@ -3,11 +3,13 @@
 #include "FirmwarePlugin.h"
 #include "Joystick.h"
 #include "JoystickManager.h"
+#include "MAVLinkLib.h"
 #include "MavlinkCameraControlInterface.h"
 #include "MultiVehicleManager.h"
 #include "QGCLoggingCategory.h"
 #include "QGCVideoStreamInfo.h"
 #include "SimulatedCameraControl.h"
+#include "Vehicle.h"
 
 #include <cmath>
 #include "GimbalControllerSettings.h"
@@ -796,8 +798,8 @@ void QGCCameraManager::_handleCameraFovStatus(const mavlink_message_t& message)
     }
 
     auto* settings = SettingsManager::instance()->gimbalControllerSettings();
-    settings->CameraHFov()->setRawValue(fov.hfov);
-    settings->CameraVFov()->setRawValue(vfovDeg);
+    settings->cameraHFov()->setRawValue(fov.hfov);
+    settings->cameraVFov()->setRawValue(vfovDeg);
 }
 
 void QGCCameraManager::_setCurrentZoomLevel(int level)

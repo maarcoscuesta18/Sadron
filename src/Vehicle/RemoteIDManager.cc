@@ -1,8 +1,10 @@
 #include "RemoteIDManager.h"
+#include "MAVLinkLib.h"
 #include "SettingsManager.h"
 #include "RemoteIDSettings.h"
 #include "PositionManager.h"
 #include "Vehicle.h"
+#include "VehicleLinkManager.h"
 #include "MAVLinkProtocol.h"
 #include "QGCLoggingCategory.h"
 

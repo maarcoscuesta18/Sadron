@@ -29,9 +29,8 @@ CPMAddPackage(
         "EARCUT_BUILD_TESTS OFF"
         "EARCUT_BUILD_BENCH OFF"
         "EARCUT_BUILD_VIZ OFF"
+    SYSTEM YES
 )
-
-qgc_disable_dependency_warnings(earcut_hpp)
 
 target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE earcut_hpp::earcut_hpp)
 
@@ -42,7 +41,7 @@ target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE earcut_hpp::earcut_hpp)
 CPMAddPackage(
     NAME libexpat
     GITHUB_REPOSITORY libexpat/libexpat
-    GIT_TAG R_2_7_4
+    GIT_TAG R_2_7_5
     SOURCE_SUBDIR expat
     OPTIONS
         "EXPAT_BUILD_TESTS OFF"

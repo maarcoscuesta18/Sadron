@@ -1,7 +1,8 @@
 #include "JoystickConfigController.h"
+
 #include "Fact.h"
+#include "Joystick.h"
 #include "ParameterManager.h"
-#include "QGCApplication.h"
 #include "QGCLoggingCategory.h"
 #include "Vehicle.h"
 
@@ -60,7 +61,7 @@ void JoystickConfigController::_setJoystick(Joystick* joystick)
 
     _joystick = joystick;
     _readStoredCalibrationValues();
-    connect(_joystick, &Joystick::rawChannelValuesChanged, this, &JoystickConfigController::rawChannelValuesChanged);
+    connect(_joystick, &Joystick::rawChannelValuesChanged, this, &JoystickConfigController::_rawChannelValuesChanged);
 
     // Connect to settings changes to emit extension enabled signals
     connect(_joystick->settings()->enableManualControlPitchExtension(), &Fact::rawValueChanged, this, [this]() {

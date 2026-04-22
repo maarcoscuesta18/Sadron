@@ -5,6 +5,8 @@
 #include "SettingsManager.h"
 #include "UnitsSettings.h"
 
+#include <QtCore/QJsonArray>
+#include <QtCore/QJsonObject>
 #include <QtCore/QtMath>
 
 QGC_LOGGING_CATEGORY(FactMetaDataLog, "FactSystem.FactMetaData")
@@ -1172,6 +1174,7 @@ FactMetaData *FactMetaData::createFromJsonObject(const QJsonObject &json, const 
 
     static const QList<JsonHelper::KeyValidateInfo> keyInfoList = {
         { _nameJsonKey,                 QJsonValue::String, true },
+        { _labelJsonKey,                QJsonValue::String, false },
         { _typeJsonKey,                 QJsonValue::String, true },
         { _shortDescriptionJsonKey,     QJsonValue::String, false },
         { _longDescriptionJsonKey,      QJsonValue::String, false },
@@ -1187,6 +1190,7 @@ FactMetaData *FactMetaData::createFromJsonObject(const QJsonObject &json, const 
         { _categoryJsonKey,             QJsonValue::String, false },
         { _groupJsonKey,                QJsonValue::String, false },
         { _volatileJsonKey,             QJsonValue::Bool,   false },
+        { _readOnlyJsonKey,             QJsonValue::Bool,   false },
         { _enumBitmaskArrayJsonKey,     QJsonValue::Array,  false },
         { _enumValuesArrayJsonKey,      QJsonValue::Array,  false },
         { _enumValuesJsonKey,           QJsonValue::String, false },
@@ -1252,6 +1256,7 @@ FactMetaData *FactMetaData::createFromJsonObject(const QJsonObject &json, const 
 
     metaData->setDecimalPlaces(json[_decimalPlacesJsonKey].toInt(kUnknownDecimalPlaces));
     metaData->setShortDescription(json[_shortDescriptionJsonKey].toString());
+    metaData->setLabel(json[_labelJsonKey].toString());
     metaData->setLongDescription(json[_longDescriptionJsonKey].toString());
 
     if (json.contains(_unitsJsonKey)) {
@@ -1387,6 +1392,10 @@ FactMetaData *FactMetaData::createFromJsonObject(const QJsonObject &json, const 
         volatileValue = json[_volatileJsonKey].toBool();
     }
     metaData->setVolatileValue(volatileValue);
+
+    if (json.contains(_readOnlyJsonKey)) {
+        metaData->setReadOnly(json[_readOnlyJsonKey].toBool());
+    }
 
     if (json.contains(_groupJsonKey)) {
         metaData->setGroup(json[_groupJsonKey].toString());

@@ -1,14 +1,11 @@
 #pragma once
 
-#include <QtCore/QLoggingCategory>
 #include <QtCore/QJsonObject>
 #include <QtCore/QVariantList>
 #include <QtPositioning/QGeoCoordinate>
 
 class QmlObjectListModel;
 class QTranslator;
-
-Q_DECLARE_LOGGING_CATEGORY(JsonHelperLog)
 
 /// Json manipulation helper class.
 /// Primarily used for parsing and processing Fact metadata.
@@ -60,6 +57,10 @@ namespace JsonHelper
     };
 
     bool validateKeys(const QJsonObject& jsonObject, const QList<KeyValidateInfo>& keyInfo, QString& errorString);
+
+    /// Validates keys like validateKeys but also rejects any keys not listed in keyInfo.
+    /// @return false: validation failed, errorString set
+    bool validateKeysStrict(const QJsonObject& jsonObject, const QList<KeyValidateInfo>& keyInfo, QString& errorString);
 
     /// Loads a QGeoCoordinate
     ///     Stored as array [ lat, lon, alt ]

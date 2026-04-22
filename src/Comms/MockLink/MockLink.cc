@@ -1,10 +1,11 @@
 #include "MockLink.h"
+#include "MAVLinkLib.h"
 #include "LinkManager.h"
+#include "MAVLinkProtocol.h"
 #include "MockLinkCamera.h"
 #include "MockLinkFTP.h"
 #include "MockLinkGimbal.h"
 #include "MockLinkWorker.h"
-#include "QGCApplication.h"
 #include "QGCLoggingCategory.h"
 #include "FirmwarePlugin.h"
 #include "FactMetaData.h"
@@ -83,6 +84,10 @@ MockLink::MockLink(SharedLinkConfigurationPtr &config, QObject *parent)
     , _mockLinkFTP(new MockLinkFTP(_vehicleSystemId, _vehicleComponentId, this))
 {
     qCDebug(MockLinkLog) << this;
+
+    if (_mockConfig->startArmed()) {
+        setArmed(true);
+    }
 
     // Initialize ADS-B vehicles with different starting conditions
     _adsbVehicles.reserve(_numberOfVehicles);
@@ -198,7 +203,7 @@ void MockLink::run1HzTasks()
         _mockLinkCamera->sendCameraHeartbeats();
     }
 
-    if (!qgcApp()->runningUnitTests()) {
+    if (!QGC::runningUnitTests()) {
         // Sending RC Channels during unit test breaks RC tests which does it's own RC simulation
         _sendRCChannels();
     }
@@ -699,6 +704,9 @@ void MockLink::_handleIncomingMavlinkMsg(const mavlink_message_t &msg)
     case MAVLINK_MSG_ID_PARAM_MAP_RC:
         _handleParamMapRC(msg);
         break;
+    case MAVLINK_MSG_ID_SETUP_SIGNING:
+        _handleSetupSigning(msg);
+        break;
     default:
         break;
     }
@@ -724,6 +732,28 @@ void MockLink::_handleParamMapRC(const mavlink_message_t &msg)
     } else {
         qCWarning(MockLinkLog) << "MockLink - PARAM_MAP_RC: Unsupported param_index" << paramMapRC.param_index;
     }
+}
+
+void MockLink::_handleSetupSigning(const mavlink_message_t &msg)
+{
+    mavlink_setup_signing_t setupSigning{};
+    mavlink_msg_setup_signing_decode(&msg, &setupSigning);
+
+    if (setupSigning.target_system != _vehicleSystemId) {
+        return;
+    }
+
+    // All-zero key = disable signing
+    bool allZeroKey = true;
+    for (const uint8_t byte : setupSigning.secret_key) {
+        if (byte != 0) {
+            allZeroKey = false;
+            break;
+        }
+    }
+
+    _signingEnabled = !allZeroKey;
+    qCDebug(MockLinkLog) << "Signing" << (_signingEnabled ? "enabled" : "disabled");
 }
 
 void MockLink::_handleSetMode(const mavlink_message_t &msg)
@@ -1064,6 +1094,14 @@ void MockLink::_handleParamSet(const mavlink_message_t &msg)
         return;
     }
 
+    if (_paramSetFailureMode == FailParamSetParamError) {
+        qCDebug(MockLinkLog) << "Param set failure: PARAM_ERROR" << paramId;
+        _sendParamError(componentId, paramId,
+                        _mapParamName2Value[componentId].keys().indexOf(paramId),
+                        MAV_PARAM_ERROR_VALUE_OUT_OF_RANGE);
+        return;
+    }
+
     // Normal success path
     _setParamFloatUnionIntoMap(componentId, paramId, request.param_value);
 
@@ -1159,6 +1197,12 @@ void MockLink::_handleParamRequestRead(const mavlink_message_t &msg)
         return;
     }
 
+    if (_paramRequestReadFailureMode == FailParamRequestReadParamError) {
+        qCDebug(MockLinkLog) << "Param request read failure: PARAM_ERROR" << paramId;
+        _sendParamError(componentId, paramId, request.param_index, MAV_PARAM_ERROR_DOES_NOT_EXIST);
+        return;
+    }
+
     (void) mavlink_msg_param_value_pack_chan(
         _vehicleSystemId,
         componentId,                                               // component id
@@ -1169,6 +1213,26 @@ void MockLink::_handleParamRequestRead(const mavlink_message_t &msg)
         _mapParamName2MavParamType[componentId][paramId],          // Parameter type
         _mapParamName2Value[componentId].count(),                  // Total number of parameters
         _mapParamName2Value[componentId].keys().indexOf(paramId)   // Index of this parameter
+    );
+    respondWithMavlinkMessage(responseMsg);
+}
+
+void MockLink::_sendParamError(int componentId, const char *paramId, int16_t paramIndex, uint8_t errorCode)
+{
+    mavlink_message_t responseMsg{};
+    char paramIdBuf[MAVLINK_MSG_PARAM_ERROR_FIELD_PARAM_ID_LEN + 1] = {};
+    (void) strncpy(paramIdBuf, paramId, MAVLINK_MSG_PARAM_ERROR_FIELD_PARAM_ID_LEN);
+
+    (void) mavlink_msg_param_error_pack_chan(
+        _vehicleSystemId,
+        static_cast<uint8_t>(componentId),
+        mavlinkChannel(),
+        &responseMsg,
+        MAVLinkProtocol::instance()->getSystemId(),
+        MAVLinkProtocol::getComponentId(),
+        paramIdBuf,
+        paramIndex,
+        errorCode
     );
     respondWithMavlinkMessage(responseMsg);
 }
@@ -1395,15 +1459,9 @@ void MockLink::_respondWithAutopilotVersion()
 
 #ifndef QGC_NO_ARDUPILOT_DIALECT
     if (_firmwareType == MAV_AUTOPILOT_ARDUPILOTMEGA) {
-        if (_vehicleType == MAV_TYPE_SUBMARINE ) {
-            flightVersion.parts.major = 4;
-            flightVersion.parts.minor = 5;
-            flightVersion.parts.patch = 7;
-        } else {
-            flightVersion.parts.major = 4;
-            flightVersion.parts.minor = 6;
-            flightVersion.parts.patch = 3;
-        }
+        flightVersion.parts.major = 4;
+        flightVersion.parts.minor = 7;
+        flightVersion.parts.patch = 0;
         flightVersion.parts.type = FIRMWARE_VERSION_TYPE_OFFICIAL;
     } else if (_firmwareType == MAV_AUTOPILOT_PX4) {
 #endif

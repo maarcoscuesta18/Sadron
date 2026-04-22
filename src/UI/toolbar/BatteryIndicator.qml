@@ -14,7 +14,7 @@ Item {
     width:          batteryIndicatorRow.width
 
     property bool       showIndicator:      _activeVehicle && _activeVehicle.batteries.count > 0
-    property bool       waitForParameters:  true    // UI won't show until parameters are ready
+    property bool       waitForParameters:  false
     property Component  expandedPageComponent
 
     property var    _activeVehicle:     QGroundControl.multiVehicleManager.activeVehicle
@@ -113,7 +113,7 @@ Item {
             let allHaveChargeState = true
             for (var i = 0; i < _activeVehicle.batteries.count; i++) {
                 let battery = _activeVehicle.batteries.get(i)
-                if (battery.chargeState.rawValue === MAVLink.MAV_BATTERY_CHARGE_STATE_UNDEFINED) {
+                if (battery.chargeState.rawValue === MAVLinkEnums.MAV_BATTERY_CHARGE_STATE_UNDEFINED) {
                     allHaveChargeState = false
                     break
                 }
@@ -193,7 +193,8 @@ Item {
 
         ToolIndicatorPage {
             showExpand:         expandedComponent ? true : false
-            waitForParameters:  control.waitForParameters
+            waitForParameters:                  false
+            expandedComponentWaitForParameters: true
             contentComponent:   batteryContentComponent
             expandedComponent:  batteryExpandedComponent
         }
@@ -208,7 +209,7 @@ Item {
 
             function getBatteryColor() {
                 switch (battery.chargeState.rawValue) {
-                    case MAVLink.MAV_BATTERY_CHARGE_STATE_OK:
+                    case MAVLinkEnums.MAV_BATTERY_CHARGE_STATE_OK:
                         if (!isNaN(battery.percentRemaining.rawValue)) {
                             if (battery.percentRemaining.rawValue > threshold1) {
                                 return qgcPal.colorGreen
@@ -220,12 +221,12 @@ Item {
                         } else {
                             return qgcPal.text
                         }
-                    case MAVLink.MAV_BATTERY_CHARGE_STATE_LOW:
+                    case MAVLinkEnums.MAV_BATTERY_CHARGE_STATE_LOW:
                         return qgcPal.colorOrange
-                    case MAVLink.MAV_BATTERY_CHARGE_STATE_CRITICAL:
-                    case MAVLink.MAV_BATTERY_CHARGE_STATE_EMERGENCY:
-                    case MAVLink.MAV_BATTERY_CHARGE_STATE_FAILED:
-                    case MAVLink.MAV_BATTERY_CHARGE_STATE_UNHEALTHY:
+                    case MAVLinkEnums.MAV_BATTERY_CHARGE_STATE_CRITICAL:
+                    case MAVLinkEnums.MAV_BATTERY_CHARGE_STATE_EMERGENCY:
+                    case MAVLinkEnums.MAV_BATTERY_CHARGE_STATE_FAILED:
+                    case MAVLinkEnums.MAV_BATTERY_CHARGE_STATE_UNHEALTHY:
                         return qgcPal.colorRed
                     default:
                         return qgcPal.text
@@ -234,7 +235,7 @@ Item {
 
             function getBatterySvgSource() {
                 switch (battery.chargeState.rawValue) {
-                    case MAVLink.MAV_BATTERY_CHARGE_STATE_OK:
+                    case MAVLinkEnums.MAV_BATTERY_CHARGE_STATE_OK:
                         if (!isNaN(battery.percentRemaining.rawValue)) {
                             if (battery.percentRemaining.rawValue > threshold1) {
                                 return "/qmlimages/BatteryGreen.svg"
@@ -244,13 +245,13 @@ Item {
                                 return "/qmlimages/BatteryYellow.svg"
                             }
                         }
-                    case MAVLink.MAV_BATTERY_CHARGE_STATE_LOW:
+                    case MAVLinkEnums.MAV_BATTERY_CHARGE_STATE_LOW:
                         return "/qmlimages/BatteryOrange.svg" // Low with orange svg
-                    case MAVLink.MAV_BATTERY_CHARGE_STATE_CRITICAL:
+                    case MAVLinkEnums.MAV_BATTERY_CHARGE_STATE_CRITICAL:
                         return "/qmlimages/BatteryCritical.svg" // Critical with red svg
-                    case MAVLink.MAV_BATTERY_CHARGE_STATE_EMERGENCY:
-                    case MAVLink.MAV_BATTERY_CHARGE_STATE_FAILED:
-                    case MAVLink.MAV_BATTERY_CHARGE_STATE_UNHEALTHY:
+                    case MAVLinkEnums.MAV_BATTERY_CHARGE_STATE_EMERGENCY:
+                    case MAVLinkEnums.MAV_BATTERY_CHARGE_STATE_FAILED:
+                    case MAVLinkEnums.MAV_BATTERY_CHARGE_STATE_UNHEALTHY:
                         return "/qmlimages/BatteryEMERGENCY.svg" // Exclamation mark
                     default:
                         return "/qmlimages/Battery.svg" // Fallback if percentage is unavailable
@@ -266,7 +267,7 @@ Item {
                     }
                 } else if (!isNaN(battery.voltage.rawValue)) {
                     return battery.voltage.valueString + battery.voltage.units
-                } else if (battery.chargeState.rawValue !== MAVLink.MAV_BATTERY_CHARGE_STATE_UNDEFINED) {
+                } else if (battery.chargeState.rawValue !== MAVLinkEnums.MAV_BATTERY_CHARGE_STATE_UNDEFINED) {
                     return battery.chargeState.enumStringValue
                 }
                 return qsTr("n/a")
@@ -275,7 +276,7 @@ Item {
             function getBatteryVoltageText() {
                 if (!isNaN(battery.voltage.rawValue)) {
                     return battery.voltage.valueString + battery.voltage.units
-                } else if (battery.chargeState.rawValue !== MAVLink.MAV_BATTERY_CHARGE_STATE_UNDEFINED) {
+                } else if (battery.chargeState.rawValue !== MAVLinkEnums.MAV_BATTERY_CHARGE_STATE_UNDEFINED) {
                     return battery.chargeState.enumStringValue
                 }
                 return qsTr("n/a")
@@ -355,14 +356,14 @@ Item {
                 id: batteryValuesAvailableComponent
 
                 QtObject {
-                    property bool functionAvailable:         battery.function.rawValue !== MAVLink.MAV_BATTERY_FUNCTION_UNKNOWN
-                    property bool showFunction:              functionAvailable && battery.function.rawValue != MAVLink.MAV_BATTERY_FUNCTION_ALL
+                    property bool functionAvailable:         battery.function.rawValue !== MAVLinkEnums.MAV_BATTERY_FUNCTION_UNKNOWN
+                    property bool showFunction:              functionAvailable && battery.function.rawValue != MAVLinkEnums.MAV_BATTERY_FUNCTION_ALL
                     property bool temperatureAvailable:      !isNaN(battery.temperature.rawValue)
                     property bool currentAvailable:          !isNaN(battery.current.rawValue)
                     property bool mahConsumedAvailable:      !isNaN(battery.mahConsumed.rawValue)
                     property bool timeRemainingAvailable:    !isNaN(battery.timeRemaining.rawValue)
                     property bool percentRemainingAvailable: !isNaN(battery.percentRemaining.rawValue)
-                    property bool chargeStateAvailable:      battery.chargeState.rawValue !== MAVLink.MAV_BATTERY_CHARGE_STATE_UNDEFINED
+                    property bool chargeStateAvailable:      battery.chargeState.rawValue !== MAVLinkEnums.MAV_BATTERY_CHARGE_STATE_UNDEFINED
                 }
             }
 
@@ -446,13 +447,13 @@ Item {
                     Layout.fillWidth:   true
                     fact:               _batterySettings.consolidateMultipleBatteries
                     text:               qsTr("Only show battery with lowest charge")
-                    visible:            fact.visible
+                    visible:            fact.userVisible
                 }
 
                 LabelledFactComboBox {
                     label:      qsTr("Value")
                     fact:       _batterySettings.valueDisplay
-                    visible:    fact.visible
+                    visible:    fact.userVisible
                 }
 
                 ColumnLayout {
@@ -489,7 +490,7 @@ Item {
                                 fact: _batterySettings.threshold1
                                 implicitWidth: ScreenTools.defaultFontPixelWidth * 6
                                 height: ScreenTools.defaultFontPixelHeight * 1.5
-                                enabled: fact.visible
+                                enabled: fact.userVisible
                                 onEditingFinished: {
                                     // Validate and set the new threshold value
                                     _batterySettings.setThreshold1(parseInt(text));
@@ -511,7 +512,7 @@ Item {
                                 fact: _batterySettings.threshold2
                                 implicitWidth: ScreenTools.defaultFontPixelWidth * 6
                                 height: ScreenTools.defaultFontPixelHeight * 1.5
-                                enabled: fact.visible
+                                enabled: fact.userVisible
                                 onEditingFinished: {
                                     // Validate and set the new threshold value
                                     _batterySettings.setThreshold2(parseInt(text));

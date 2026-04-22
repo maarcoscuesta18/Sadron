@@ -1,22 +1,18 @@
 #pragma once
 
-#include <QtCore/QLoggingCategory>
 #include <QtCore/QObject>
 #include <QtCore/QPointF>
 #include <QtCore/QRectF>
 #include <QtCore/QSizeF>
 
 #include "FactGroup.h"
-#include "QGCVideoStreamInfo.h"
-#include "QmlObjectListModel.h"
 
 #include <QtQmlIntegration/QtQmlIntegration>
 
 class QGCCameraParamIO;
+class QGCVideoStreamInfo;
+class QmlObjectListModel;
 class Vehicle;
-
-Q_DECLARE_LOGGING_CATEGORY(CameraControlLog)
-Q_DECLARE_LOGGING_CATEGORY(CameraControlVerboseLog)
 
 /// Abstract base class for all camera controls: real and simulated
 class MavlinkCameraControlInterface : public FactGroup
@@ -24,6 +20,8 @@ class MavlinkCameraControlInterface : public FactGroup
     Q_OBJECT
     QML_ELEMENT
     QML_UNCREATABLE("")
+    Q_MOC_INCLUDE("QGCVideoStreamInfo.h")
+    Q_MOC_INCLUDE("QmlObjectListModel.h")
     Q_PROPERTY(Fact*                exposureMode            READ exposureMode                                       NOTIFY parametersReady)
     Q_PROPERTY(Fact*                ev                      READ ev                                                 NOTIFY parametersReady)
     Q_PROPERTY(Fact*                iso                     READ iso                                                NOTIFY parametersReady)
@@ -44,6 +42,8 @@ class MavlinkCameraControlInterface : public FactGroup
     Q_PROPERTY(bool                 hasFocus                READ hasFocus                                           NOTIFY infoChanged)
     Q_PROPERTY(bool                 hasVideoStream          READ hasVideoStream                                     NOTIFY infoChanged)
     Q_PROPERTY(bool                 hasTracking             READ hasTracking                                        NOTIFY infoChanged)
+    Q_PROPERTY(bool                 supportsTrackingPoint   READ supportsTrackingPoint                              NOTIFY infoChanged)
+    Q_PROPERTY(bool                 supportsTrackingRect    READ supportsTrackingRect                               NOTIFY infoChanged)
     Q_PROPERTY(bool                 photosInVideoMode       READ photosInVideoMode                                  NOTIFY infoChanged)
     Q_PROPERTY(bool                 videoInPhotoMode        READ videoInPhotoMode                                   NOTIFY infoChanged)
     Q_PROPERTY(bool                 isBasic                 READ isBasic                                            NOTIFY infoChanged)
@@ -74,10 +74,14 @@ class MavlinkCameraControlInterface : public FactGroup
     Q_PROPERTY(QStringList          streamLabels            READ streamLabels                                       NOTIFY streamLabelsChanged)
     Q_PROPERTY(ThermalViewMode      thermalMode             READ thermalMode            WRITE setThermalMode        NOTIFY thermalModeChanged)
     Q_PROPERTY(double               thermalOpacity          READ thermalOpacity         WRITE setThermalOpacity     NOTIFY thermalOpacityChanged)
+
+    // Camera tracking properties
     Q_PROPERTY(bool                 trackingEnabled         READ trackingEnabled        WRITE setTrackingEnabled    NOTIFY trackingEnabledChanged)
-    Q_PROPERTY(TrackingStatus       trackingStatus          READ trackingStatus                                     CONSTANT)
-    Q_PROPERTY(bool                 trackingImageStatus     READ trackingImageStatus                                NOTIFY trackingImageStatusChanged)
-    Q_PROPERTY(QRectF               trackingImageRect       READ trackingImageRect                                  NOTIFY trackingImageStatusChanged)
+    Q_PROPERTY(bool                 trackingImageIsActive   READ trackingImageIsActive                              NOTIFY trackingImageIsActiveChanged)
+    Q_PROPERTY(bool                 trackingImageIsPoint    READ trackingImageIsPoint                               NOTIFY trackingImageIsPointChanged)
+    Q_PROPERTY(QRectF               trackingImageRect       READ trackingImageRect                                  NOTIFY trackingImageRectChanged)
+    Q_PROPERTY(QPointF              trackingImagePoint      READ trackingImagePoint                                 NOTIFY trackingImagePointChanged)
+    Q_PROPERTY(qreal                trackingImageRadius     READ trackingImageRadius                                NOTIFY trackingImageRadiusChanged)
 
     // These properties are used to determine what controls to show in the UI and are based on both the camera capabilities as well as the video manager status.
     // They are not necessarily directly related to the MAVLink camera capabilities.
@@ -141,14 +145,6 @@ public:
     };
     Q_ENUM(ThermalViewMode)
 
-    enum TrackingStatus {
-        TRACKING_UNKNOWN = 0,
-        TRACKING_SUPPORTED = 1,
-        TRACKING_ENABLED = 2,
-        TRACKING_RECTANGLE = 4,
-        TRACKING_POINT = 8
-    };
-    Q_ENUM(TrackingStatus)
 
     Q_INVOKABLE virtual void setCameraModeVideo() = 0;
     Q_INVOKABLE virtual void setCameraModePhoto() = 0;
@@ -165,8 +161,8 @@ public:
     Q_INVOKABLE virtual void stopZoom() = 0;
     Q_INVOKABLE virtual void stopStream() = 0;
     Q_INVOKABLE virtual void resumeStream() = 0;
-    Q_INVOKABLE virtual void startTracking(QRectF rec) = 0;
-    Q_INVOKABLE virtual void startTracking(QPointF point, double radius) = 0;
+    Q_INVOKABLE virtual void startTrackingRect(QRectF rec) = 0;
+    Q_INVOKABLE virtual void startTrackingPoint(QPointF point, double radius) = 0;
     Q_INVOKABLE virtual void stopTracking() = 0;
 
     virtual int version() const = 0;
@@ -182,6 +178,8 @@ public:
     virtual bool hasZoom() const = 0;
     virtual bool hasFocus() const = 0;
     virtual bool hasTracking() const = 0;
+    virtual bool supportsTrackingPoint() const = 0;
+    virtual bool supportsTrackingRect() const = 0;
     virtual bool hasVideoStream() const = 0;
     virtual bool photosInVideoMode() const = 0;
     virtual bool videoInPhotoMode() const = 0;
@@ -239,10 +237,11 @@ public:
     virtual bool trackingEnabled() const = 0;
     virtual void setTrackingEnabled(bool set) = 0;
 
-    virtual TrackingStatus trackingStatus() const = 0;
-
-    virtual bool trackingImageStatus() const = 0;
+    virtual bool trackingImageIsActive() const = 0;
+    virtual bool trackingImageIsPoint() const = 0;
     virtual QRectF trackingImageRect() const = 0;
+    virtual QPointF trackingImagePoint() const = 0;
+    virtual qreal trackingImageRadius() const = 0;
 
     virtual void factChanged(Fact *pFact) = 0;                              ///< Notify controller a parameter has changed
     virtual bool incomingParameter(Fact *pFact, QVariant &newValue) = 0;    ///< Allow controller to modify or invalidate incoming parameter
@@ -286,7 +285,11 @@ signals:
     void recordTimeChanged();
     void streamLabelsChanged();
     void trackingEnabledChanged();
-    void trackingImageStatusChanged();
+    void trackingImageIsActiveChanged();
+    void trackingImageIsPointChanged();
+    void trackingImageRectChanged();
+    void trackingImagePointChanged();
+    void trackingImageRadiusChanged();
     void thermalModeChanged();
     void thermalOpacityChanged();
     void storageStatusChanged();

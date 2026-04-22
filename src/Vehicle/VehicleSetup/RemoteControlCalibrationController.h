@@ -1,15 +1,11 @@
 #pragma once
 
-#include <QtCore/QLoggingCategory>
 #include <QtCore/QElapsedTimer>
 #include <QtQmlIntegration/QtQmlIntegration>
 #include <QtQuick/QQuickItem>
 
 #include "FactPanelController.h"
 #include "QGCMAVLink.h"
-
-Q_DECLARE_LOGGING_CATEGORY(RemoteControlCalibrationControllerLog)
-Q_DECLARE_LOGGING_CATEGORY(RemoteControlCalibrationControllerVerboseLog)
 
 /// Abstract base class for calibrating RC and Joystick controller.
 class RemoteControlCalibrationController : public FactPanelController
@@ -258,9 +254,8 @@ signals:
     void calibrationCompleted();
 
 public slots:
-    /// Super class must call this when the raw channel values change
-    ///     @param channelValues The current channel values
-    void rawChannelValuesChanged(QVector<int> channelValues);
+    void _rawChannelValuesChanged(QVector<int> channelValues) { _processChannelValues(channelValues); }
+    void _clampedChannelValuesChanged(QVector<int> channelValues) { _processChannelValues(channelValues); }
 
 protected:
     /// A set of information associated with a radio channel.
@@ -300,6 +295,8 @@ protected:
     virtual bool _stickFunctionEnabled(StickFunction stickFunction); ///< Returns true if the stick function is enabled
 
 private:
+    void _processChannelValues(QVector<int> channelValues);
+
     virtual void _saveStoredCalibrationValues() = 0; ///< Super class must implement to save stored calibration values
     virtual void _readStoredCalibrationValues() = 0; ///< Super class must implement to read stored calibration values
 

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <QtCore/QElapsedTimer>
-#include <QtCore/QLoggingCategory>
 #include <QtCore/QMap>
 #include <QtCore/QObject>
 #include <QtCore/QPointer>
@@ -9,11 +8,10 @@
 #include <QtCore/QVariantList>
 #include <QtQmlIntegration/QtQmlIntegration>
 
-#include "MAVLinkLib.h"
+#include "MAVLinkMessageType.h"
 #include "QmlObjectListModel.h"
-#include "Vehicle.h"
 
-Q_DECLARE_LOGGING_CATEGORY(CameraManagerLog)
+class Vehicle;
 
 class CameraMetaData;
 class Joystick;
@@ -54,7 +52,7 @@ public:
         int retryCount = 0;
         QElapsedTimer lastHeartbeat;
         QTimer backoffTimer;
-        QPointer<Vehicle> vehicle;
+        Vehicle* vehicle;           ///< Raw pointer is safe: CameraStruct is owned by QGCCameraManager which is a child of Vehicle
         QPointer<QGCCameraManager> manager;
 
     private:
@@ -128,7 +126,7 @@ private:
     void _addCameraControlToLists(MavlinkCameraControlInterface* cameraControl);
     void _handleCameraFovStatus(const mavlink_message_t& message);
 
-    QPointer<Vehicle> _vehicle;
+    Vehicle* _vehicle;              ///< Raw pointer is safe: QGCCameraManager is a QObject child of Vehicle, so Vehicle always outlives us
     QPointer<SimulatedCameraControl> _simulatedCameraControl;
     QPointer<Joystick> _activeJoystick;
     bool _vehicleReadyState = false;

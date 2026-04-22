@@ -1,13 +1,10 @@
 #pragma once
 
-#include <QtCore/QLoggingCategory>
 #include <QtCore/QObject>
 #include <QtCore/QString>
 #include <QtQmlIntegration/QtQmlIntegration>
 
-#include "MAVLinkLib.h"
-
-Q_DECLARE_LOGGING_CATEGORY(MAVLinkInspectorControllerLog)
+#include "MAVLinkMessageType.h"
 
 class LinkInterface;
 class MAVLinkChartController;

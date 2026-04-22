@@ -27,6 +27,7 @@ TreeView {
     readonly property int _layerMission: 1
     readonly property int _layerFence:   2
     readonly property int _layerRally:   3
+    readonly property bool _createNewPlanMode: planMasterController.readyForPlanCreation
 
     property var _missionController: planMasterController.missionController
     property var _geoFenceController: planMasterController.geoFenceController
@@ -43,13 +44,63 @@ TreeView {
     QGCFlickableScrollIndicator { parent: root; orientation: QGCFlickableScrollIndicator.Horizontal }
     QGCFlickableScrollIndicator { parent: root; orientation: QGCFlickableScrollIndicator.Vertical }
 
+    property int _lastMissionItemCount: 0
+
+    Connections {
+        target: root._missionController.visualItems
+        function onCountChanged() {
+            var newCount = _missionController.visualItems ? _missionController.visualItems.count : 0
+            if (newCount > root._lastMissionItemCount) {
+                // First waypoint added — collapse Plan Info and Defaults
+                if (root._lastMissionItemCount <= 1 && newCount > 1) {
+                    var planFileRow = _rowFor(_missionController.planFileGroupIndex)
+                    if (root.isExpanded(planFileRow)) {
+                        root.collapse(planFileRow)
+                    }
+                    var defaultsRow = _rowFor(_missionController.defaultsGroupIndex)
+                    if (root.isExpanded(defaultsRow)) {
+                        root.collapse(defaultsRow)
+                    }
+                }
+                // Expand mission group and scroll to the new item
+                var missionRow = _rowFor(_missionController.missionGroupIndex)
+                if (!root.isExpanded(missionRow)) {
+                    root.expand(missionRow)
+                }
+                // Scroll happens when the editor signals editorExpandedAndLoaded
+            }
+            root._lastMissionItemCount = newCount
+        }
+    }
+
     Connections {
         target: root._missionController
-        function onVisualItemsChanged() {
-            // Mission group always expanded after rebuild (clear / load)
+        function onVisualItemsReset() {
             root.collapseRecursively()
-            root.expand(_rowFor(_missionController.missionGroupIndex))
+            if (_missionController.containsItems) {
+                // Non-empty plan: expand mission group
+                root.expand(_rowFor(_missionController.missionGroupIndex))
+            } else {
+                // Empty plan: expand Plan Info and Defaults, scroll to top
+                root.expand(_rowFor(_missionController.planFileGroupIndex))
+                root.expand(_rowFor(_missionController.defaultsGroupIndex))
+                root.contentY = 0
+            }
+            root._lastMissionItemCount = _missionController.visualItems ? _missionController.visualItems.count : 0
             root.editingLayerChangeRequested(root._layerMission)
+        }
+        function onPlanViewStateChanged() {
+            // Current item changed — bring it on-screen if completely off-screen.
+            // Fine-tuned scroll happens later via editorExpandedAndLoaded.
+            var item = _missionController.currentPlanViewItem
+            if (item) {
+                var modelIndex = _missionController.visualItemsTree.indexForObject(item)
+                var row = root.rowAtIndex(modelIndex)
+                if (row >= 0) {
+                    root.forceLayout()
+                    root.positionViewAtRow(row, TableView.Visible)
+                }
+            }
         }
     }
 
@@ -80,11 +131,13 @@ TreeView {
     }
 
     // Toggle expand/collapse for a group header. Does not affect the editing layer.
+    // Caller is responsible for calling allowViewSwitch() before invoking this.
     function _toggleGroup(row) {
-        if (root.isExpanded(row))
+        if (root.isExpanded(row)) {
             root.collapse(row)
-        else
+        } else {
             root.expand(row)
+        }
         root.forceLayout()
     }
 
@@ -107,12 +160,23 @@ TreeView {
         onTriggered: root.forceLayout()
     }
 
+    // Called by MissionItemEditor delegates when their editor height has settled.
+    function _scrollToMissionItem(delegateItem) {
+        root.forceLayout()
+        var bottomY = delegateItem.mapToItem(root.contentItem, 0, delegateItem.height).y
+        var neededContentY = bottomY - root.height
+        if (neededContentY > root.contentY) {
+            root.contentY = neededContentY
+        }
+    }
+
     delegate: Item {
         id: delegateRoot
         implicitWidth: root.width
         implicitHeight: (loader.item ? loader.item.height : 1) + (separatorLine.visible ? separatorLine.height + root.rowSpacing : 0)
+        visible: !root._createNewPlanMode || _visibleInCreateMode
+        height: visible ? implicitHeight : 0
         width: root.width
-        height: implicitHeight
 
         required property TreeView treeView
         required property bool isTreeNode
@@ -125,6 +189,10 @@ TreeView {
         readonly property var nodeObject: model.object
         readonly property string nodeType: model.nodeType
         readonly property bool separator: model.separator ?? false
+
+        // In create-new-plan mode, only show Plan Info and Defaults groups and their children
+        readonly property bool _visibleInCreateMode: nodeType === "planFileGroup" || nodeType === "planFileInfo"
+                                                     || nodeType === "defaultsGroup" || nodeType === "defaultsInfo"
 
         onImplicitHeightChanged: layoutTimer.restart()
 
@@ -226,6 +294,9 @@ TreeView {
                             }
                         }
                     })
+                    item.editorExpandedAndLoaded.connect(function() {
+                        root._scrollToMissionItem(delegateRoot)
+                    })
                 }
             }
         }
@@ -286,7 +357,12 @@ TreeView {
 
                 MouseArea {
                     anchors.fill: parent
-                    onClicked: root._toggleGroup(delegateRoot.row)
+                    onClicked: {
+                        if (!mainWindow.allowViewSwitch()) {
+                            return
+                        }
+                        root._toggleGroup(delegateRoot.row)
+                    }
                 }
             }
         }

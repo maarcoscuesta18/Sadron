@@ -35,9 +35,20 @@ permissions:
 
 jobs:
   changes:
-    uses: ./.github/workflows/_detect-changes.yml
-    with:
-      platform: android
+    name: Detect Changes
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      should_build: ${{ steps.detect.outputs.any }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+      - id: detect
+        uses: ./.github/actions/detect-changes
+        with:
+          platform: android
 
   build:
     name: Android (${{ matrix.host }})
@@ -112,8 +123,12 @@ jobs:
       - name: Initial Setup
         uses: ./.github/actions/common
 
+      - name: Install host build dependencies
+        if: runner.os == 'Linux'
+        uses: ./.github/actions/install-dependencies
+
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v5
+        uses: gradle/actions/setup-gradle@v6
         with:
           cache-read-only: ${{ github.event_name == 'pull_request' }}
 
@@ -336,6 +351,14 @@ jobs:
               timeout 30s adb -e logcat -d > "${OUT_DIR}/adb-logcat-full.txt" 2>/dev/null || true
               timeout 30s adb -e shell dumpsys activity > "${OUT_DIR}/dumpsys-activity.txt" 2>/dev/null || true
               timeout 30s adb -e shell getprop > "${OUT_DIR}/getprop.txt" 2>/dev/null || true
+
+              # Extract GStreamer-specific lines for quick diagnosis
+              if [ -f "${OUT_DIR}/adb-logcat-full.txt" ]; then
+                grep -iE 'gst|gstreamer|libgst|GST_PLUGIN|GstVideoReceiver|qml6glsink|qgcvideosinkbin' \
+                  "${OUT_DIR}/adb-logcat-full.txt" > "${OUT_DIR}/gstreamer-logcat.txt" 2>/dev/null || true
+                grep -iE 'dlopen.*gst|UnsatisfiedLinkError.*gst|cannot.*load.*gst' \
+                  "${OUT_DIR}/adb-logcat-full.txt" > "${OUT_DIR}/gstreamer-load-errors.txt" 2>/dev/null || true
+              fi
             else
               echo "No online emulator device found; skipping adb diagnostics." > "${OUT_DIR}/adb-skipped.txt"
             fi
@@ -364,7 +387,7 @@ jobs:
         uses: ./.github/actions/attest-and-upload
         with:
           artifact-name: ${{ env.PACKAGE }}.apk
-          package-name: ${{ matrix.primary && env.PACKAGE || format('{0}-{1}', env.PACKAGE, matrix.host) }}
+          package-name: ${{ format('{0}-{1}', env.PACKAGE, matrix.host) }}
           subject-name: ${{ env.PACKAGE }}-${{ matrix.host }}
           aws-role-arn: ${{ secrets.AWS_ROLE_ARN }}
           aws-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}

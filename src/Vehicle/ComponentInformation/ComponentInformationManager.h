@@ -1,12 +1,8 @@
 #pragma once
 
-#include "MAVLinkLib.h"
+#include "MAVLinkEnums.h"
 #include "QGCStateMachine.h"
 #include "RequestMetaDataTypeStateMachine.h"
-
-#include <QtCore/QLoggingCategory>
-
-Q_DECLARE_LOGGING_CATEGORY(ComponentInformationManagerLog)
 
 class Vehicle;
 class ComponentInformationTranslation;

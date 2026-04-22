@@ -1,11 +1,7 @@
 #pragma once
 
 #include "QGCStateMachine.h"
-#include "MAVLinkLib.h"
-
-#include <QtCore/QLoggingCategory>
-
-Q_DECLARE_LOGGING_CATEGORY(InitialConnectStateMachineLog)
+#include "MAVLinkMessageType.h"
 
 class Vehicle;
 class SkippableAsyncState;
@@ -45,7 +41,7 @@ private:
     void _handleAutopilotVersionFailure();
     void _requestStandardModes(AsyncFunctionState* state);
     void _requestCompInfo(AsyncFunctionState* state);
-    void _requestParameters(AsyncFunctionState* state);
+    void _requestParameters(SkippableAsyncState* state);
     void _onParametersReady(bool ready);
     void _requestMission(SkippableAsyncState* state);
     void _requestGeoFence(SkippableAsyncState* state);
@@ -54,14 +50,18 @@ private:
 
     // Skip predicates
     bool _shouldSkipAutopilotVersionRequest() const;
+    bool _shouldSkipForFlying() const;
     bool _shouldSkipForLinkType() const;
     bool _hasPrimaryLink() const;
+    bool _shouldSkipForPlanLoad();
+
+    QString _lastSkipReason;
 
     // State pointers for wiring
     RetryableRequestMessageState* _stateAutopilotVersion = nullptr;
     AsyncFunctionState* _stateStandardModes = nullptr;
     AsyncFunctionState* _stateCompInfo = nullptr;
-    AsyncFunctionState* _stateParameters = nullptr;
+    SkippableAsyncState* _stateParameters = nullptr;
     SkippableAsyncState* _stateMission = nullptr;
     SkippableAsyncState* _stateGeoFence = nullptr;
     SkippableAsyncState* _stateRallyPoints = nullptr;

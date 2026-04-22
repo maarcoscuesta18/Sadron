@@ -1,4 +1,9 @@
+#include "QmlObjectListModel.h"
 #include "ParameterManager.h"
+
+#include <QtCore/QDir>
+#include <QtCore/QTextStream>
+
 #include "AutoPilotPlugin.h"
 #include "CompInfoParam.h"
 #include "ComponentInformationManager.h"
@@ -10,6 +15,7 @@
 #include "QGCApplication.h"
 #include "QGCLoggingCategory.h"
 #include "Vehicle.h"
+#include "VehicleLinkManager.h"
 #include "QGCStateMachine.h"
 #include "MultiVehicleManager.h"
 
@@ -46,11 +52,11 @@ ParameterManager::ParameterManager(Vehicle *vehicle)
     (void) connect(&_hashCheckTimer, &QTimer::timeout, this, &ParameterManager::_hashCheckTimeout);
 
     _paramRequestListTimer.setSingleShot(true);
-    _paramRequestListTimer.setInterval(qgcApp()->runningUnitTests() ? kTestInitialRequestIntervalMs : kParamRequestListTimeoutMs);
+    _paramRequestListTimer.setInterval(QGC::runningUnitTests() ? kTestInitialRequestIntervalMs : kParamRequestListTimeoutMs);
     (void) connect(&_paramRequestListTimer, &QTimer::timeout, this, &ParameterManager::_paramRequestListTimeout);
 
     _waitingParamTimeoutTimer.setSingleShot(true);
-    _waitingParamTimeoutTimer.setInterval(qgcApp()->runningUnitTests() ? 500 : 3000);
+    _waitingParamTimeoutTimer.setInterval(QGC::runningUnitTests() ? 500 : 3000);
     if (!_logReplay) {
         (void) connect(&_waitingParamTimeoutTimer, &QTimer::timeout, this, &ParameterManager::_waitingParamTimeout);
     }
@@ -339,17 +345,31 @@ void ParameterManager::_mavlinkParamSet(int componentId, const QString &paramNam
         }
     };
 
+    auto checkForParamError = [componentId, paramName](const mavlink_message_t &message) -> bool {
+        if (message.compid != componentId) {
+            return false;
+        }
+
+        mavlink_param_error_t paramError{};
+        mavlink_msg_param_error_decode(&message, &paramError);
+
+        char paramId[MAVLINK_MSG_PARAM_ERROR_FIELD_PARAM_ID_LEN + 1] = {};
+        (void) strncpy(paramId, paramError.param_id, MAVLINK_MSG_PARAM_ERROR_FIELD_PARAM_ID_LEN);
+
+        return QString(paramId) == paramName;
+    };
+
     // State Machine:
     //  Send PARAM_SET - 2 retries after initial attempt
     //  Increment pending write count
-    //  Wait for PARAM_VALUE ack
+    //  Wait for PARAM_VALUE ack or PARAM_ERROR rejection
     //  Decrement pending write count
     //
     //  timeout:
     //      Decrement pending write count
     //      Back up to PARAM_SET for retries
     //
-    //  error:
+    //  error (PARAM_ERROR or retries exhausted):
     //      Refresh parameter from vehicle
     //      Notify user of failure
 
@@ -365,11 +385,20 @@ void ParameterManager::_mavlinkParamSet(int componentId, const QString &paramNam
     auto retryDecPendingWriteCountState = new FunctionState(QStringLiteral("ParameterManager retry decrement pending write count"), stateMachine, [this]() {
         _decrementPendingWriteCount();
     });
-    auto waitAckState = new WaitForMavlinkMessageState(stateMachine, MAVLINK_MSG_ID_PARAM_VALUE, kWaitForParamValueAckMs, checkForCorrectParamValue);
+    auto errorDecPendingWriteCountState = new FunctionState(QStringLiteral("ParameterManager error decrement pending write count"), stateMachine, [this]() {
+        _decrementPendingWriteCount();
+    });
+    auto waitAckState = new WaitForParamResponseState(stateMachine, kWaitForParamValueAckMs, checkForCorrectParamValue, checkForParamError);
     auto paramRefreshState = new FunctionState(QStringLiteral("ParameterManager param refresh"), stateMachine, [this, componentId, paramName]() {
         refreshParameter(componentId, paramName);
     });
-    auto userNotifyState = new ShowAppMessageState(stateMachine, QStringLiteral("Parameter write failed: param: %1 %2").arg(paramName).arg(_vehicleAndComponentString(componentId)));
+    auto userNotifyState = new FunctionState(QStringLiteral("ParameterManager user notify"), stateMachine, [waitAckState, paramName, this, componentId]() {
+        const QString errorDetail = waitAckState->lastParamErrorString();
+        const QString msg = errorDetail.isEmpty()
+            ? QStringLiteral("Parameter write failed: param: %1 %2").arg(paramName, _vehicleAndComponentString(componentId))
+            : QStringLiteral("Parameter write failed: param: %1 %2 - %3").arg(paramName, _vehicleAndComponentString(componentId), errorDetail);
+        QGC::showAppMessage(msg);
+    });
     auto logSuccessState = new FunctionState(QStringLiteral("ParameterManager log success"), stateMachine, [this, componentId, paramName]() {
         qCDebug(ParameterManagerLog) << "Parameter write succeeded: param:" << paramName << _vehicleAndComponentString(componentId);
         emit _paramSetSuccess(componentId, paramName);
@@ -388,12 +417,16 @@ void ParameterManager::_mavlinkParamSet(int componentId, const QString &paramNam
     decPendingWriteCountState->addThisTransition(&QGCState::advance, logSuccessState);
     logSuccessState->addThisTransition          (&QGCState::advance, finalState);
 
-    // Retry transitions
-    waitAckState->addTransition(waitAckState, &WaitForMavlinkMessageState::timeout, retryDecPendingWriteCountState); // Retry on timeout
+    // Retry transitions (timeout path)
+    waitAckState->addTransition(waitAckState, &WaitStateBase::timeout, retryDecPendingWriteCountState);
     retryDecPendingWriteCountState->addThisTransition(&QGCState::advance, sendParamSetState);
 
-    // Error transitions
-    sendParamSetState->addThisTransition(&QGCState::error, logFailureState); // Error is signaled after retries exhausted or internal error
+    // PARAM_ERROR path (definitive rejection - no retries)
+    waitAckState->addThisTransition                     (&QGCState::error, errorDecPendingWriteCountState);
+    errorDecPendingWriteCountState->addThisTransition   (&QGCState::advance, logFailureState);
+
+    // Error transitions (retries exhausted)
+    sendParamSetState->addThisTransition(&QGCState::error, logFailureState);
 
     // Error state branching transitions
     logFailureState->addThisTransition  (&QGCState::advance, userNotifyState);
@@ -542,7 +575,47 @@ void ParameterManager::_ftpDownloadProgress(float progress)
     }
 }
 
+void ParameterManager::_resetHashCheck()
+{
+    _hashCheckTimer.stop();
+    _hashCheckDone = false;
+}
+
 void ParameterManager::refreshAllParameters(uint8_t componentId)
+{
+    _resetHashCheck();
+    setParameterDownloadSkipped(false);
+    _startParameterDownload(componentId);
+}
+
+void ParameterManager::tryHashCheckCacheLoad()
+{
+    _resetHashCheck();
+    _cacheOnlyHashCheck = true;
+
+    const SharedLinkInterfacePtr sharedLink = _vehicle->vehicleLinkManager()->primaryLink().lock();
+    if (!sharedLink) {
+        emit cacheCheckOnlyFailed();
+        return;
+    }
+
+    if (sharedLink->linkConfiguration()->isHighLatency() || _logReplay) {
+        qCDebug(ParameterManagerLog) << _logVehiclePrefix(-1) << "Cache-only hash check: high latency or log replay link, signalling failure";
+        emit cacheCheckOnlyFailed();
+        return;
+    }
+
+    if (_vehicle->px4Firmware() && !_initialLoadComplete) {
+        _hashCheckTimer.start();
+        qCDebug(ParameterManagerLog) << _logVehiclePrefix(-1) << "Cache-only hash check: requesting _HASH_CHECK";
+        _requestHashCheck(MAV_COMP_ID_AUTOPILOT1);
+    } else {
+        qCDebug(ParameterManagerLog) << _logVehiclePrefix(-1) << "Cache-only hash check: not available, signalling failure";
+        emit cacheCheckOnlyFailed();
+    }
+}
+
+void ParameterManager::_startParameterDownload(uint8_t componentId)
 {
     const SharedLinkInterfacePtr sharedLink = _vehicle->vehicleLinkManager()->primaryLink().lock();
     if (!sharedLink) {
@@ -557,6 +630,7 @@ void ParameterManager::refreshAllParameters(uint8_t componentId)
         _waitingForDefaultComponent = false;
         emit parametersReadyChanged(_parametersReady);
         emit missingParametersChanged(_missingParameters);
+        return;
     }
 
     if (_tryftp && ((componentId == MAV_COMP_ID_ALL) || (componentId == MAV_COMP_ID_AUTOPILOT1))) {
@@ -567,17 +641,18 @@ void ParameterManager::refreshAllParameters(uint8_t componentId)
         (void) connect(ftpManager, &FTPManager::downloadComplete, this, &ParameterManager::_ftpDownloadComplete);
         _waitingParamTimeoutTimer.stop();
         if (ftpManager->download(MAV_COMP_ID_AUTOPILOT1,
-                                 QStringLiteral("@PARAM/param.pck"),
+                                 QStringLiteral("@PARAM/param.pck?withdefaults=1"),
                                  QStandardPaths::writableLocation(QStandardPaths::TempLocation),
-                                 QStringLiteral(""),
+                                 QStringLiteral("param.pck"),
                                  false /* No filesize check */)) {
             (void) connect(ftpManager, &FTPManager::commandProgress, this, &ParameterManager::_ftpDownloadProgress);
         } else {
-            qCWarning(ParameterManagerLog) << "ParameterManager::refreshallParameters FTPManager::download returned failure";
+            qCWarning(ParameterManagerLog) << "ParameterManager::_startParameterDownload FTPManager::download returned failure";
             (void) disconnect(ftpManager, &FTPManager::downloadComplete, this, &ParameterManager::_ftpDownloadComplete);
         }
     } else if (_vehicle->px4Firmware() && !_initialLoadComplete && !_hashCheckDone) {
         // PX4: Try _HASH_CHECK first to see if we can load from cache without a full parameter stream
+        _cacheOnlyHashCheck = false;
         _hashCheckTimer.start();
         qCDebug(ParameterManagerLog) << _logVehiclePrefix(-1) << "Requesting _HASH_CHECK before full parameter list";
         const uint8_t hashCheckCompId = (componentId == MAV_COMP_ID_ALL)
@@ -838,21 +913,45 @@ void ParameterManager::_mavlinkParamRequestRead(int componentId, const QString &
         return true;
     };
 
+    auto checkForParamError = [componentId, paramName, paramIndex](const mavlink_message_t &message) -> bool {
+        if (message.compid != componentId) {
+            return false;
+        }
+
+        mavlink_param_error_t paramError{};
+        mavlink_msg_param_error_decode(&message, &paramError);
+
+        char paramId[MAVLINK_MSG_PARAM_ERROR_FIELD_PARAM_ID_LEN + 1] = {};
+        (void) strncpy(paramId, paramError.param_id, MAVLINK_MSG_PARAM_ERROR_FIELD_PARAM_ID_LEN);
+
+        if (paramIndex != -1) {
+            return paramError.param_index == paramIndex;
+        } else {
+            return QString(paramId) == paramName;
+        }
+    };
+
     // State Machine:
     //  Send PARAM_REQUEST_READ - 2 retries after initial attempt
-    //  Wait for PARAM_VALUE ack
+    //  Wait for PARAM_VALUE ack or PARAM_ERROR rejection
     //
     //  timeout:
     //      Back up to PARAM_REQUEST_READ for retries
     //
-    //  error:
+    //  error (PARAM_ERROR or retries exhausted):
     //      Notify user of failure
 
     // Create states
     auto stateMachine = new QGCStateMachine(QStringLiteral("PARAM_REQUEST_READ"), vehicle(), this);
     auto sendParamRequestReadState = new SendMavlinkMessageState(stateMachine, paramRequestReadEncoder, kParamRequestReadRetryCount);
-    auto waitAckState = new WaitForMavlinkMessageState(stateMachine, MAVLINK_MSG_ID_PARAM_VALUE, kWaitForParamValueAckMs, checkForCorrectParamValue);
-    auto userNotifyState = new ShowAppMessageState(stateMachine, QStringLiteral("Parameter read failed: param: %1 %2").arg(paramName).arg(_vehicleAndComponentString(componentId)));
+    auto waitAckState = new WaitForParamResponseState(stateMachine, kWaitForParamValueAckMs, checkForCorrectParamValue, checkForParamError);
+    auto userNotifyState = new FunctionState(QStringLiteral("User notify"), stateMachine, [waitAckState, paramName, this, componentId]() {
+        const QString errorDetail = waitAckState->lastParamErrorString();
+        const QString msg = errorDetail.isEmpty()
+            ? QStringLiteral("Parameter read failed: param: %1 %2").arg(paramName, _vehicleAndComponentString(componentId))
+            : QStringLiteral("Parameter read failed: param: %1 %2 - %3").arg(paramName, _vehicleAndComponentString(componentId), errorDetail);
+        QGC::showAppMessage(msg);
+    });
     auto logSuccessState = new FunctionState(QStringLiteral("Log success"), stateMachine, [this, componentId, paramName, paramIndex]() {
         qCDebug(ParameterManagerLog) << "PARAM_REQUEST_READ succeeded: name:" << paramName << "index" << paramIndex << _vehicleAndComponentString(componentId);
         emit _paramRequestReadSuccess(componentId, paramName, paramIndex);
@@ -869,11 +968,14 @@ void ParameterManager::_mavlinkParamRequestRead(int componentId, const QString &
     waitAckState->addThisTransition             (&QGCState::advance, logSuccessState);
     logSuccessState->addThisTransition          (&QGCState::advance, finalState);
 
-    // Retry transitions
-    waitAckState->addTransition(waitAckState, &WaitForMavlinkMessageState::timeout, sendParamRequestReadState); // Retry on timeout
+    // Retry transitions (timeout path)
+    waitAckState->addTransition(waitAckState, &WaitStateBase::timeout, sendParamRequestReadState);
 
-    // Error transitions
-    sendParamRequestReadState->addThisTransition(&QGCState::error, logFailureState); // Error is signaled after retries exhausted or internal error
+    // PARAM_ERROR path (definitive rejection - no retries)
+    waitAckState->addThisTransition(&QGCState::error, logFailureState);
+
+    // Error transitions (retries exhausted)
+    sendParamRequestReadState->addThisTransition(&QGCState::error, logFailureState);
 
     // Error state branching transitions
     if (notifyFailure) {
@@ -929,9 +1031,14 @@ void ParameterManager::_tryCacheHashLoad(int vehicleId, int componentId, const Q
     if (!cacheFile.exists()) {
         qCDebug(ParameterManagerLog) << "No parameter cache file";
         if (!_hashCheckDone) {
-            // Standalone hash check path — fall back to PARAM_REQUEST_LIST
             _hashCheckDone = true;
-            refreshAllParameters();
+            if (_cacheOnlyHashCheck) {
+                qCDebug(ParameterManagerLog) << "Cache-only hash check: no cache file, signalling failure";
+                emit cacheCheckOnlyFailed();
+                return;
+            }
+            // Standalone hash check path — fall back to PARAM_REQUEST_LIST
+            _startParameterDownload(MAV_COMP_ID_ALL);
         }
         // If already in PARAM_REQUEST_LIST flow, just let the stream continue
         return;
@@ -1023,12 +1130,17 @@ void ParameterManager::_tryCacheHashLoad(int vehicleId, int componentId, const Q
             for (const QString &name: cacheMap.keys()) {
                 _debugCacheParamSeen[componentId][name] = false;
             }
-            qgcApp()->showAppMessage(tr("Parameter cache CRC match failed"));
+            QGC::showAppMessage(tr("Parameter cache CRC match failed"));
         }
         if (!_hashCheckDone) {
-            // Standalone hash check path — fall back to PARAM_REQUEST_LIST
             _hashCheckDone = true;
-            refreshAllParameters();
+            if (_cacheOnlyHashCheck) {
+                qCDebug(ParameterManagerLog) << "Cache-only hash check: CRC mismatch, signalling failure";
+                emit cacheCheckOnlyFailed();
+                return;
+            }
+            // Standalone hash check path — fall back to PARAM_REQUEST_LIST
+            _startParameterDownload(MAV_COMP_ID_ALL);
         }
         // If already in PARAM_REQUEST_LIST flow, just let the stream continue
     }
@@ -1236,8 +1348,8 @@ void ParameterManager::_checkInitialLoadComplete()
                                     "If you are using modified firmware, you may need to resolve any vehicle startup errors to resolve the issue. "
                                     "If you are using standard firmware, you may need to upgrade to a newer version to resolve the issue.").arg(QCoreApplication::applicationName()).arg(_vehicle->id());
         qCDebug(ParameterManagerLog) << errorMsg;
-        qgcApp()->showAppMessage(errorMsg);
-        if (!qgcApp()->runningUnitTests()) {
+        QGC::showAppMessage(errorMsg);
+        if (!QGC::runningUnitTests()) {
             qCWarning(ParameterManagerLog) << _logVehiclePrefix(-1) << "The following parameter indices could not be loaded after the maximum number of retries:" << indexList;
         }
     }
@@ -1252,8 +1364,13 @@ void ParameterManager::_checkInitialLoadComplete()
 void ParameterManager::_hashCheckTimeout()
 {
     _hashCheckDone = true;
+    if (_cacheOnlyHashCheck) {
+        qCDebug(ParameterManagerLog) << _logVehiclePrefix(-1) << "_HASH_CHECK timed out in cache-only mode, signalling failure";
+        emit cacheCheckOnlyFailed();
+        return;
+    }
     qCDebug(ParameterManagerLog) << _logVehiclePrefix(-1) << "_HASH_CHECK timed out, falling back to PARAM_REQUEST_LIST";
-    refreshAllParameters();
+    _startParameterDownload(MAV_COMP_ID_ALL);
 }
 
 void ParameterManager::_paramRequestListTimeout()
@@ -1272,12 +1389,12 @@ void ParameterManager::_paramRequestListTimeout()
 
     if (!_disableAllRetries && (++_initialRequestRetryCount <= _maxInitialRequestListRetry)) {
         qCDebug(ParameterManagerLog) << _logVehiclePrefix(-1) << "Retrying initial parameter request list";
-        refreshAllParameters();
+        _startParameterDownload(MAV_COMP_ID_ALL);
     } else if (!_vehicle->genericFirmware()) {
         const QString errorMsg = tr("Vehicle %1 did not respond to request for parameters. "
                                     "This will cause %2 to be unable to display its full user interface.").arg(_vehicle->id()).arg(QCoreApplication::applicationName());
         qCDebug(ParameterManagerLog) << errorMsg;
-        qgcApp()->showAppMessage(errorMsg);
+        QGC::showAppMessage(errorMsg);
     }
 }
 
@@ -1426,6 +1543,14 @@ void ParameterManager::_setLoadProgress(double loadProgress)
     }
 }
 
+void ParameterManager::setParameterDownloadSkipped(bool skipped)
+{
+    if (_parameterDownloadSkipped != skipped) {
+        _parameterDownloadSkipped = skipped;
+        emit parameterDownloadSkippedChanged();
+    }
+}
+
 QList<int> ParameterManager::componentIds() const
 {
     return _paramCountMap.keys();
@@ -1551,6 +1676,7 @@ bool ParameterManager::_parseParamFile(const QString& filename)
                                              << "flags" << flags;
 
         QVariant parameterValue = 0;
+        QVariant defaultValue;
         switch (static_cast<ap_var_type>(ptype)) {
         qint8 data8;
         qint16 data16;
@@ -1561,6 +1687,7 @@ bool ParameterManager::_parseParamFile(const QString& filename)
             parameterValue = data8;
             if (withdefault) {
                 in >> data8;
+                defaultValue = data8;
             }
             break;
         case AP_PARAM_INT16:
@@ -1568,6 +1695,7 @@ bool ParameterManager::_parseParamFile(const QString& filename)
             parameterValue = data16;
             if (withdefault) {
                 in >> data16;
+                defaultValue = data16;
             }
             break;
         case AP_PARAM_INT32:
@@ -1575,6 +1703,7 @@ bool ParameterManager::_parseParamFile(const QString& filename)
             parameterValue = data32;
             if (withdefault) {
                 in >> data32;
+                defaultValue = data32;
             }
             break;
         case AP_PARAM_FLOAT:
@@ -1583,6 +1712,9 @@ bool ParameterManager::_parseParamFile(const QString& filename)
             parameterValue = dfloat;
             if (withdefault) {
                 in >> data32;
+                float ddefault;
+                (void) memcpy(&ddefault, &data32, 4);
+                defaultValue = ddefault;
             }
             break;
         default:
@@ -1607,6 +1739,9 @@ bool ParameterManager::_parseParamFile(const QString& filename)
         Fact *fact = nullptr;
         if (_mapCompId2FactMap.contains(componentId) && _mapCompId2FactMap[componentId].contains(parameterName)) {
             fact = _mapCompId2FactMap[componentId][parameterName];
+            if (withdefault && defaultValue.isValid()) {
+                fact->metaData()->setRawDefaultValue(defaultValue);
+            }
         } else {
             qCDebug(ParameterManagerVerbose1Log) << _logVehiclePrefix(componentId) << "Adding new fact" << parameterName;
 
@@ -1618,6 +1753,11 @@ bool ParameterManager::_parseParamFile(const QString& filename)
 
             // We need to know when the fact value changes so we can update the vehicle
             (void) connect(fact, &Fact::containerRawValueChanged, this, &ParameterManager::_factRawValueUpdated);
+
+            // Set default before emitting factAdded so QML sees defaultValueAvailable from the start
+            if (withdefault && defaultValue.isValid()) {
+                fact->metaData()->setRawDefaultValue(defaultValue);
+            }
 
             emit factAdded(componentId, fact);
         }

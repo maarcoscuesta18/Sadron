@@ -17,8 +17,8 @@ Rectangle {
     property var _visualItems: missionController.visualItems
     property bool _noMissionItemsAdded: _visualItems ? _visualItems.count <= 1 : true
     property var _settingsItem: _visualItems && _visualItems.count > 0 ? _visualItems.get(0) : null
-    property bool _multipleFirmware: !QGroundControl.singleFirmwareSupport
-    property bool _multipleVehicleTypes: !QGroundControl.singleVehicleSupport
+    property bool _multipleFirmware: !QGroundControl.singleFirmwareSupport && QGroundControl.settingsManager.appSettings.preferredFirmwareClass.rawValue === 0
+    property bool _multipleVehicleTypes: !QGroundControl.singleVehicleSupport && QGroundControl.settingsManager.appSettings.preferredVehicleClass.rawValue === 0
     property bool _allowFWVehicleTypeSelection: _noMissionItemsAdded && !globals.activeVehicle
     property bool _waypointsOnlyMode: QGroundControl.corePlugin.options.missionWaypointsOnly
     property real _fieldWidth: ScreenTools.defaultFontPixelWidth * 16
@@ -70,45 +70,35 @@ Rectangle {
             id: vehicleInfoSectionHeader
             Layout.fillWidth: true
             text: qsTr("Vehicle Info")
-            visible: !_root._waypointsOnlyMode
+            visible: !_root._waypointsOnlyMode && (_root._multipleFirmware || _root._multipleVehicleTypes)
         }
 
-        GridLayout {
+        RowLayout {
             Layout.fillWidth: true
-            columnSpacing: ScreenTools.defaultFontPixelWidth
-            rowSpacing: columnSpacing
-            columns: 2
+            spacing: ScreenTools.defaultFontPixelWidth
             visible: vehicleInfoSectionHeader.visible && vehicleInfoSectionHeader.checked
 
-            QGCLabel {
-                text: qsTr("Firmware")
-                Layout.fillWidth: true
-                visible: _root._multipleFirmware
-            }
             FactComboBox {
                 fact: QGroundControl.settingsManager.appSettings.offlineEditingFirmwareClass
                 indexModel: false
-                Layout.preferredWidth: _root._fieldWidth
+                Layout.fillWidth: true
                 visible: _root._multipleFirmware && _root._allowFWVehicleTypeSelection
             }
             QGCLabel {
                 text: _root._controllerVehicle ? _root._controllerVehicle.firmwareTypeString : ""
+                Layout.fillWidth: true
                 visible: _root._multipleFirmware && !_root._allowFWVehicleTypeSelection
             }
 
-            QGCLabel {
-                text: qsTr("Vehicle")
-                Layout.fillWidth: true
-                visible: _root._multipleVehicleTypes
-            }
             FactComboBox {
                 fact: QGroundControl.settingsManager.appSettings.offlineEditingVehicleClass
                 indexModel: false
-                Layout.preferredWidth: _root._fieldWidth
+                Layout.fillWidth: true
                 visible: _root._multipleVehicleTypes && _root._allowFWVehicleTypeSelection
             }
             QGCLabel {
                 text: _root._controllerVehicle ? _root._controllerVehicle.vehicleTypeString : ""
+                Layout.fillWidth: true
                 visible: _root._multipleVehicleTypes && !_root._allowFWVehicleTypeSelection
             }
         }
@@ -120,11 +110,44 @@ Rectangle {
             text: qsTr("Expected Home Position")
         }
 
+        // Prompt to click map to set/move home position
+        ColumnLayout {
+            Layout.fillWidth: true
+            Layout.topMargin: ScreenTools.defaultFontPixelWidth / 2
+            spacing: ScreenTools.defaultFontPixelWidth / 2
+            visible: plannedHomePositionSection.checked && _root.planMasterController.readyForPlanCreation
+
+            Image {
+                source: "qrc:///qmlimages/MapHome.svg"
+                Layout.alignment: Qt.AlignHCenter
+                Layout.preferredWidth: ScreenTools.defaultFontPixelHeight * 2
+                Layout.preferredHeight: Layout.preferredWidth
+                fillMode: Image.PreserveAspectFit
+            }
+
+            QGCLabel {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                horizontalAlignment: Text.AlignHCenter
+                text: qsTr("Click in map to set position")
+                visible: !_root.missionController.homePositionSet
+            }
+
+            QGCLabel {
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
+                horizontalAlignment: Text.AlignHCenter
+                text: qsTr("Drag to move home position. Click to set new position.")
+                visible: _root.missionController.homePositionSet
+            }
+        }
+
+        // Normal home position controls (shown only when home is set)
         GridLayout {
             Layout.fillWidth: true
             columnSpacing: ScreenTools.defaultFontPixelWidth
             columns: 2
-            visible: plannedHomePositionSection.checked
+            visible: plannedHomePositionSection.checked && _root.missionController.homePositionSet
 
             QGCLabel {
                 text: qsTr("Altitude (AMSL)")
@@ -147,18 +170,7 @@ Rectangle {
             font.pointSize: ScreenTools.smallFontPointSize
             text: qsTr("Actual position/alt set by vehicle at flight time.")
             horizontalAlignment: Text.AlignHCenter
-            visible: plannedHomePositionSection.checked
-        }
-
-        QGCButton {
-            text: qsTr("Move To Map Center")
-            Layout.alignment: Qt.AlignHCenter
-            visible: plannedHomePositionSection.checked
-            onClicked: {
-                if (_root._settingsItem) {
-                    _root._settingsItem.coordinate = _root.editorMap.center
-                }
-            }
+            visible: plannedHomePositionSection.checked && _root.missionController.homePositionSet
         }
     }
 }

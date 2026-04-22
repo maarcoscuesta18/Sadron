@@ -1,7 +1,6 @@
 #include "RadioComponentController.h"
 #include "Fact.h"
 #include "ParameterManager.h"
-#include "QGCApplication.h"
 #include "QGCLoggingCategory.h"
 #include "Vehicle.h"
 
@@ -56,7 +55,7 @@ RadioComponentController::~RadioComponentController()
 void RadioComponentController::start(void)
 {
     RemoteControlCalibrationController::start();
-    (void) connect(_vehicle, &Vehicle::rcChannelsChanged, this, &RemoteControlCalibrationController::rawChannelValuesChanged);
+    (void) connect(_vehicle, &Vehicle::rcChannelsClampedChanged, this, &RemoteControlCalibrationController::_clampedChannelValuesChanged);
 
 }
 

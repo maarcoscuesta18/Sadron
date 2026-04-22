@@ -12,6 +12,8 @@ RowLayout {
     required property var planMasterController
     property bool showRallyPointsHelp: false
 
+    signal toolbarButtonClicked()
+
     id: root
     spacing: ScreenTools.defaultFontPixelWidth
 
@@ -141,7 +143,7 @@ RowLayout {
         text: qsTr("Open")
         iconSource: "/qmlimages/Plan.svg"
         enabled: !_planMasterController.syncInProgress
-        onClicked: _openButtonClicked()
+        onClicked: { toolbarButtonClicked(); _openButtonClicked() }
     }
 
     QGCButton {
@@ -149,7 +151,7 @@ RowLayout {
         iconSource: "/res/SaveToDisk.svg"
         enabled: !_syncInProgress && _hasPlanItems
         primary: _saveDirty
-        onClicked: _saveButtonClicked()
+        onClicked: { toolbarButtonClicked(); _saveButtonClicked() }
     }
 
     QGCButton {
@@ -159,7 +161,7 @@ RowLayout {
         enabled: !_syncInProgress && _hasPlanItems
         visible: !_syncInProgress
         primary: _uploadDirty
-        onClicked: _uploadClicked()
+        onClicked: { toolbarButtonClicked(); _uploadClicked() }
     }
 
     QGCButton {
@@ -173,7 +175,7 @@ RowLayout {
         text: qsTr("Clear")
         iconSource: "/res/TrashCan.svg"
         enabled: !_syncInProgress
-        onClicked: _clearClicked()
+        onClicked: { toolbarButtonClicked(); _clearClicked() }
     }
 
     QGCButton {

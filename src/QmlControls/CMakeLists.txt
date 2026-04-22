@@ -66,6 +66,8 @@ target_sources(${CMAKE_PROJECT_NAME}
         ToolStripActionList.h
         TransformPositionController.cc
         TransformPositionController.h
+        ServoOutputMonitorController.cc
+        ServoOutputMonitorController.h
 )
 
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
@@ -88,11 +90,11 @@ qt_add_qml_module(QGroundControlControlsModule
         AltFrameDialog.qml
         AppSettings.qml
         APMSubMotorDisplay.qml
-        AppLogging.qml
         AutotuneUI.qml
         AxisMonitor.qml
         ClickableColor.qml
         ConfigButton.qml
+        ConfigSection.qml
         DeadMouseArea.qml
         DropButton.qml
         DropPanel.qml
@@ -168,6 +170,7 @@ qt_add_qml_module(QGroundControlControlsModule
         SettingsButton.qml
         SettingsGroupLayout.qml
         SetupPage.qml
+        SigningKeyManager.qml
         SliderSwitch.qml
         SubMenuButton.qml
         TimedProgressTracker.qml

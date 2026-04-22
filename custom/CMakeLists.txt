@@ -19,7 +19,9 @@ if(ANDROID)
             set(FINAL_ANDROID_DIR "${CMAKE_BINARY_DIR}/custom/android")
 
             file(COPY "${DEFAULT_ANDROID_DIR}/." DESTINATION "${FINAL_ANDROID_DIR}")
-            file(COPY "${CUSTOM_ANDROID_DIR}/." DESTINATION "${FINAL_ANDROID_DIR}")
+
+            # Overlay custom Android files
+            execute_process(COMMAND ${CMAKE_COMMAND} -E copy_directory "${CUSTOM_ANDROID_DIR}" "${FINAL_ANDROID_DIR}")
 
             set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
                 "${DEFAULT_ANDROID_DIR}/"

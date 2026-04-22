@@ -1,7 +1,8 @@
 #include "SensorsComponentController.h"
-#include "QGCApplication.h"
+#include "QGC.h"
 #include "ParameterManager.h"
 #include "Vehicle.h"
+#include "VehicleLinkManager.h"
 #include "QGCLoggingCategory.h"
 
 QGC_LOGGING_CATEGORY(SensorsComponentControllerLog, "AutoPilotPlugins.SensorsComponentController")
@@ -9,13 +10,6 @@ QGC_LOGGING_CATEGORY(SensorsComponentControllerLog, "AutoPilotPlugins.SensorsCom
 SensorsComponentController::SensorsComponentController(void)
     : _statusLog                                (nullptr)
     , _progressBar                              (nullptr)
-    , _compassButton                            (nullptr)
-    , _gyroButton                               (nullptr)
-    , _accelButton                              (nullptr)
-    , _airspeedButton                           (nullptr)
-    , _levelButton                              (nullptr)
-    , _cancelButton                             (nullptr)
-    , _setOrientationsButton                    (nullptr)
     , _showOrientationCalArea                   (false)
     , _gyroCalInProgress                        (false)
     , _magCalInProgress                         (false)
@@ -83,20 +77,10 @@ void SensorsComponentController::_startLogCalibration(void)
     _hideAllCalAreas();
 
     connect(_vehicle, &Vehicle::textMessageReceived, this, &SensorsComponentController::_handleUASTextMessage);
-
-    _cancelButton->setEnabled(false);
 }
 
 void SensorsComponentController::_startVisualCalibration(void)
 {
-    _compassButton->setEnabled(false);
-    _gyroButton->setEnabled(false);
-    _accelButton->setEnabled(false);
-    _airspeedButton->setEnabled(false);
-    _levelButton->setEnabled(false);
-    _setOrientationsButton->setEnabled(false);
-    _cancelButton->setEnabled(true);
-
     _resetInternalState();
 
     _progressBar->setProperty("value", 0);
@@ -132,14 +116,6 @@ void SensorsComponentController::_stopCalibration(SensorsComponentController::St
 {
     disconnect(_vehicle, &Vehicle::textMessageReceived, this, &SensorsComponentController::_handleUASTextMessage);
 
-    _compassButton->setEnabled(true);
-    _gyroButton->setEnabled(true);
-    _accelButton->setEnabled(true);
-    _airspeedButton->setEnabled(true);
-    _levelButton->setEnabled(true);
-    _setOrientationsButton->setEnabled(true);
-    _cancelButton->setEnabled(false);
-
     if (code == StopCalibrationSuccess) {
         _resetInternalState();
 
@@ -172,7 +148,7 @@ void SensorsComponentController::_stopCalibration(SensorsComponentController::St
         default:
             // Assume failed
             _hideAllCalAreas();
-            qgcApp()->showAppMessage(tr("Calibration failed. Calibration log will be displayed."));
+            QGC::showAppMessage(tr("Calibration failed. Calibration log will be displayed."));
             break;
     }
 
@@ -180,6 +156,9 @@ void SensorsComponentController::_stopCalibration(SensorsComponentController::St
     _accelCalInProgress = false;
     _gyroCalInProgress = false;
     _airspeedCalInProgress = false;
+    _levelCalInProgress = false;
+
+    emit calibrationActiveChanged();
 }
 
 void SensorsComponentController::calibrateGyro(void)
@@ -340,6 +319,7 @@ void SensorsComponentController::_handleUASTextMessage(int uasId, int compId, in
         } else if (text == "level") {
             _levelCalInProgress = true;
         }
+        emit calibrationActiveChanged();
         return;
     }
 
@@ -482,21 +462,20 @@ void SensorsComponentController::cancelCalibration(void)
     // for it to timeout.
     _waitingForCancel = true;
     emit waitingForCancelChanged();
-    _cancelButton->setEnabled(false);
     _vehicle->stopCalibration(true /* showError */);
 }
 
 void SensorsComponentController::_handleParametersReset(bool success)
 {
     if (success) {
-        qgcApp()->showAppMessage(tr("Reset successful"));
+        QGC::showAppMessage(tr("Reset successful"));
 
         QTimer::singleShot(1000, this, [this]() {
             _refreshParams();
         });
     }
     else {
-        qgcApp()->showAppMessage(tr("Reset failed"));
+        QGC::showAppMessage(tr("Reset failed"));
     }
 }
 

@@ -1,7 +1,6 @@
 #pragma once
 
 #include <QtCore/QList>
-#include <QtCore/QLoggingCategory>
 #include <QtCore/QMutex>
 #include <QtCore/QMutexLocker>
 #include <QtCore/QStringList>
@@ -14,9 +13,6 @@
 #ifndef QGC_NO_SERIAL_LINK
     #include "QGCSerialPortInfo.h"
 #endif
-
-Q_DECLARE_LOGGING_CATEGORY(LinkManagerLog)
-Q_DECLARE_LOGGING_CATEGORY(LinkManagerVerboseLog)
 
 class AutoConnectSettings;
 class LogReplayLink;
@@ -88,9 +84,6 @@ public:
     /// Returns pointer to the mavlink support forwarding link, or nullptr if it does not exist
     SharedLinkInterfacePtr mavlinkForwardingSupportLink();
 
-    /// Re-initilize the mavlink signing for all links. Used when the signing key changes.
-    void resetMavlinkSigning();
-
     void disconnectAll();
 
     /// Allocates a mavlink channel for use
@@ -131,9 +124,6 @@ private:
     void _addUDPAutoConnectLink();
     void _addMAVLinkForwardingLink();
     void _createDynamicForwardLink(const char *linkName, const QString &hostName);
-#ifdef QGC_ZEROCONF_ENABLED
-    void _addZeroConfAutoConnectLink();
-#endif
 
     QTimer *_portListTimer = nullptr;
     QmlObjectListModel *_qmlConfigurations = nullptr;

@@ -1,6 +1,5 @@
 #pragma once
 
-#include "MAVLinkLib.h"
 #include "UnitTest.h"
 #include "VehicleTest.h"
 
@@ -30,6 +29,7 @@ class RallyPointController;
 class MissionTest : public VehicleTest
 {
     Q_OBJECT
+    Q_DISABLE_COPY_MOVE(MissionTest)
 
 public:
     explicit MissionTest(QObject* parent = nullptr);
@@ -90,6 +90,7 @@ private:
 class OfflineMissionTest : public UnitTest
 {
     Q_OBJECT
+    Q_DISABLE_COPY_MOVE(OfflineMissionTest)
 
 public:
     explicit OfflineMissionTest(QObject* parent = nullptr);
