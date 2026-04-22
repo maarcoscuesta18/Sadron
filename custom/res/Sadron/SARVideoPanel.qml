@@ -62,13 +62,26 @@ Rectangle {
             label: option.label,
             mode: option.mode,
             cameraIndex: option.cameraIndex,
-            streamIndex: option.streamIndex
+            streamIndex: option.streamIndex,
+            streamType: option.streamType,
+            protocol: option.protocol,
+            uri: option.uri
         }
     }
 
     function _buildFeedOptions(vehicle) {
         const options = []
-        if (!vehicle || !vehicle.cameraManager) {
+        if (!vehicle) {
+            return options
+        }
+
+        if (!vehicle.cameraManager) {
+            if (typeof sadronVideoConfig !== "undefined" && sadronVideoConfig) {
+                const fallbackOptions = sadronVideoConfig.feedOptionsForVehicle(vehicle.id)
+                for (let i = 0; i < fallbackOptions.length; i++) {
+                    options.push(fallbackOptions[i])
+                }
+            }
             return options
         }
 
@@ -123,6 +136,13 @@ Rectangle {
                     cameraIndex: cameraIndex,
                     streamIndex: -1
                 })
+            }
+        }
+
+        if (options.length === 0 && typeof sadronVideoConfig !== "undefined" && sadronVideoConfig) {
+            const fallbackOptions = sadronVideoConfig.feedOptionsForVehicle(vehicle.id)
+            for (let i = 0; i < fallbackOptions.length; i++) {
+                options.push(fallbackOptions[i])
             }
         }
 
@@ -185,7 +205,21 @@ Rectangle {
 
     function _applyFeedPreference(vehicle) {
         const preference = _feedPreferenceForVehicle(vehicle)
-        if (!vehicle || !vehicle.cameraManager || !preference) {
+        if (!vehicle || !preference) {
+            return
+        }
+
+        if (preference.mode === "sadron") {
+            if (typeof sadronVideoConfig !== "undefined" && sadronVideoConfig && sadronVideoConfig.applyFeed(preference)) {
+                Qt.callLater(function() {
+                    QGroundControl.videoManager.refreshVideoBindings()
+                    QGroundControl.videoManager.startVideo()
+                })
+            }
+            return
+        }
+
+        if (!vehicle.cameraManager) {
             return
         }
 

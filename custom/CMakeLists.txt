@@ -94,6 +94,8 @@ set(CUSTOM_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/src/FirmwarePlugin/CustomFirmwarePlugin.h
     ${CMAKE_CURRENT_SOURCE_DIR}/src/FirmwarePlugin/CustomFirmwarePluginFactory.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/FirmwarePlugin/CustomFirmwarePluginFactory.h
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Video/SadronVideoConfig.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Video/SadronVideoConfig.h
     # SAR subsystem
     ${CMAKE_CURRENT_SOURCE_DIR}/src/SAR/SARMissionManager.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/src/SAR/SARMissionManager.h
@@ -132,6 +134,7 @@ set(CUSTOM_INCLUDE_DIRECTORIES
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/src/AutoPilotPlugin
     ${CMAKE_CURRENT_SOURCE_DIR}/src/FirmwarePlugin
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/Video
     ${CMAKE_CURRENT_SOURCE_DIR}/src/SAR
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Mesh
     ${CMAKE_CURRENT_SOURCE_DIR}/src/Environmental

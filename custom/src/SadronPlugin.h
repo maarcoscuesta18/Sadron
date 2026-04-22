@@ -22,6 +22,7 @@ class SARReTaskingManager;
 class SARModeManager;
 class MeshNetworkManager;
 class EnvironmentalDataProvider;
+class SadronVideoConfig;
 class VehicleCoordinator;
 
 /*===========================================================================*/
@@ -115,6 +116,7 @@ public:
     SARReTaskingManager *sarReTaskingManager() const { return _sarReTaskingManager; }
     MeshNetworkManager  *meshNetworkManager() const { return _meshNetworkManager; }
     EnvironmentalDataProvider *environmentalDataProvider() const { return _environmentalDataProvider; }
+    SadronVideoConfig *sadronVideoConfig() const { return _sadronVideoConfig; }
     VehicleCoordinator *vehicleCoordinator() const { return _vehicleCoordinator; }
     SARModeManager *sarModeManager() const { return _sarModeManager; }
 
@@ -144,6 +146,7 @@ private:
     SARReTaskingManager *_sarReTaskingManager = nullptr;
     MeshNetworkManager  *_meshNetworkManager = nullptr;
     EnvironmentalDataProvider *_environmentalDataProvider = nullptr;
+    SadronVideoConfig *_sadronVideoConfig = nullptr;
     VehicleCoordinator *_vehicleCoordinator = nullptr;
     SARModeManager *_sarModeManager = nullptr;
 };

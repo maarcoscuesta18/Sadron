@@ -18,6 +18,7 @@
 #include "SAR/SARModeManager.h"
 #include "Mesh/MeshNetworkManager.h"
 #include "Environmental/EnvironmentalDataProvider.h"
+#include "Video/SadronVideoConfig.h"
 
 #include <QtCore/QApplicationStatic>
 #include <QtQml/QQmlApplicationEngine>
@@ -95,6 +96,7 @@ SadronPlugin::~SadronPlugin()
     delete _sarCoverageTracker;   _sarCoverageTracker = nullptr;
     delete _meshNetworkManager;   _meshNetworkManager = nullptr;
     delete _environmentalDataProvider; _environmentalDataProvider = nullptr;
+    delete _sadronVideoConfig;    _sadronVideoConfig = nullptr;
 }
 
 QGCCorePlugin *SadronPlugin::instance()
@@ -112,6 +114,7 @@ void SadronPlugin::init()
     Q_ASSERT(!_sarReTaskingManager);
     Q_ASSERT(!_meshNetworkManager);
     Q_ASSERT(!_environmentalDataProvider);
+    Q_ASSERT(!_sadronVideoConfig);
     Q_ASSERT(!_vehicleCoordinator);
 
     qCDebug(SadronLog) << "Initializing SAR subsystems";
@@ -128,6 +131,7 @@ void SadronPlugin::init()
 
     _meshNetworkManager = new MeshNetworkManager(this);
     _environmentalDataProvider = new EnvironmentalDataProvider(this);
+    _sadronVideoConfig = new SadronVideoConfig(this);
 
     // VehicleCoordinator must be created last — it references all other subsystems
     _vehicleCoordinator = new VehicleCoordinator(
@@ -490,6 +494,7 @@ QQmlApplicationEngine *SadronPlugin::createQmlApplicationEngine(QObject *parent)
     context->setContextProperty("sarReTaskingManager", _sarReTaskingManager);
     context->setContextProperty("meshNetworkManager", _meshNetworkManager);
     context->setContextProperty("environmentalDataProvider", _environmentalDataProvider);
+    context->setContextProperty("sadronVideoConfig", _sadronVideoConfig);
     context->setContextProperty("vehicleCoordinator", _vehicleCoordinator);
     context->setContextProperty("sarModeManager", _sarModeManager);
 
